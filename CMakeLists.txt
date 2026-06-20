@@ -14,9 +14,26 @@ find_library(MOSQUITTOPP_LIB mosquittopp REQUIRED)
 find_path(MOSQUITTOPP_INCLUDE_DIR mosquittopp.h REQUIRED)
 #end
 
+set(CortexLink_DB_SRC 
+    src/db/db_table.cpp
+    src/db/device_property_table.cpp
+    src/db/event_table.cpp
+    src/db/rule_table.cpp
+    src/db/device_data_table.cpp
+    src/db/user_profile_table.cpp
+    src/db/event_rule_table.cpp
+    src/db/event_record_table.cpp
+)
+
+set(CortexLink_UTIL_SRC
+    src/util/uuid_util.cpp
+)
+
 add_executable(CortexLink
     src/main.cpp
     src/mqtt/mqtt_client.cpp
+    ${CortexLink_UTIL_SRC}
+    ${CortexLink_DB_SRC}
 )
 target_include_directories(CortexLink PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR})
 target_link_libraries(CortexLink PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3)
