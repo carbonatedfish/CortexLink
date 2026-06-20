@@ -14,8 +14,9 @@ find_library(MOSQUITTOPP_LIB mosquittopp REQUIRED)
 find_path(MOSQUITTOPP_INCLUDE_DIR mosquittopp.h REQUIRED)
 #end
 
-add_executable(CortexLink 
+add_executable(CortexLink
     src/main.cpp
+    src/mqtt/mqtt_client.cpp
 )
 target_include_directories(CortexLink PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR})
 target_link_libraries(CortexLink PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3)
