@@ -1,5 +1,4 @@
-#ifndef CORTEXLINK_MQTT_CLIENT_H
-#define CORTEXLINK_MQTT_CLIENT_H
+#pragma once
 
 #include <functional>
 #include <mutex>
@@ -135,5 +134,3 @@ private:
 };
 
 }  // namespace cortexlink
-
-#endif  // CORTEXLINK_MQTT_CLIENT_H
