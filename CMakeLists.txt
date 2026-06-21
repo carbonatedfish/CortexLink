@@ -9,10 +9,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Threads REQUIRED)
 find_package(SQLite3 REQUIRED)
 
-#config mosquitto
+# config Lua 5.4
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LUA REQUIRED lua5.4)
+# end
+
+# config mosquitto
 find_library(MOSQUITTOPP_LIB mosquittopp REQUIRED)
 find_path(MOSQUITTOPP_INCLUDE_DIR mosquittopp.h REQUIRED)
-#end
+# end
 
 set(CortexLink_DB_SRC 
     src/db/db_table.cpp
@@ -30,11 +35,16 @@ set(CortexLink_UTIL_SRC
     src/util/log_util.cpp
 )
 
+set(CortexLink_RULE_ENGINE_SRC
+    src/rule_engine/cond_parser.cpp
+)
+
 add_executable(CortexLink
     src/main.cpp
     src/mqtt/mqtt_client.cpp
     ${CortexLink_UTIL_SRC}
     ${CortexLink_DB_SRC}
+    ${CortexLink_RULE_ENGINE_SRC}
 )
-target_include_directories(CortexLink PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR})
-target_link_libraries(CortexLink PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3)
+target_include_directories(CortexLink PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR} ${LUA_INCLUDE_DIRS})
+target_link_libraries(CortexLink PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3 ${LUA_LIBRARIES})
