@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include "app/app_manager.h"
+#include "app/app_sql_proxy.h"
 #include "db/db_table.h"
 #include "db/device_data_table.h"
 #include "db/device_property_table.h"
@@ -120,7 +121,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // 10. Create and start the AppManager.
+    // 10. Create and start the AppManager (file transfer).
     AppFileTransManager app_mgr(&mqtt);
     if (!app_mgr.Start()) {
         spdlog::error("Failed to start AppManager");
@@ -132,16 +133,30 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    // 11. Create and start the AppSqlProxy.
+    AppSqlProxy sql_proxy(&mqtt);
+    if (!sql_proxy.Start()) {
+        spdlog::error("Failed to start AppSqlProxy");
+        app_mgr.Stop();
+        rule_engine.Stop();
+        dev_mgr.Stop();
+        mqtt.LoopStop();
+        mqtt.Disconnect();
+        DBTable::Shutdown();
+        return 1;
+    }
+
     spdlog::info("CortexLink startup complete — waiting for events");
 
-    // 11. Main loop — wait for shutdown signal.
+    // 12. Main loop — wait for shutdown signal.
     while (!g_shutdown) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
-    // 12. Graceful shutdown (reverse order of startup).
+    // 13. Graceful shutdown (reverse order of startup).
     spdlog::info("=== CortexLink shutting down ===");
 
+    sql_proxy.Stop();
     app_mgr.Stop();
     rule_engine.Stop();
     dev_mgr.Stop();

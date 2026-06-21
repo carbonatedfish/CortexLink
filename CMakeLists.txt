@@ -58,6 +58,8 @@ find_library(CRYPTO_LIB crypto REQUIRED)
 # --- App module source ---
 set(CortexLink_APP_SRC
     src/app/app_manager.cpp
+    src/app/sql_strategy.cpp
+    src/app/app_sql_proxy.cpp
 )
 
 add_executable(CortexLink
