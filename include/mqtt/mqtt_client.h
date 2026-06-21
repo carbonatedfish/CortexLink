@@ -106,31 +106,4 @@ private:
     mutable std::mutex mutex_;
 };
 
-// One publisher = one topic. Each MqttPublisher is bound to a single
-// topic and publishes every message to that topic through the shared
-// MqttClient connection.
-class MqttPublisher {
-public:
-    MqttPublisher(MqttClient *client, const std::string &topic,
-                  int qos = 0, bool retain = false);
-    ~MqttPublisher() = default;
-
-    // Publish a string payload to the bound topic.
-    bool Publish(const std::string &payload);
-    // Publish a binary payload to the bound topic.
-    bool Publish(const void *payload, size_t len);
-
-    const std::string &GetTopic() const { return topic_; }
-    int GetQos() const { return qos_; }
-    bool GetRetain() const { return retain_; }
-    void SetQos(int qos) { qos_ = qos; }
-    void SetRetain(bool retain) { retain_ = retain; }
-
-private:
-    MqttClient *client_;
-    std::string topic_;
-    int qos_;
-    bool retain_;
-};
-
 }  // namespace cortexlink

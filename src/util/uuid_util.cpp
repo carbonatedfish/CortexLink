@@ -1,6 +1,8 @@
 #include "util/uuid_util.h"
 
+#include <chrono>
 #include <cstdio>
+#include <random>
 
 namespace cortexlink {
 namespace util {
@@ -49,6 +51,35 @@ std::string BlobToUuid(const uint8_t *blob)
                   blob[8], blob[9], blob[10], blob[11],
                   blob[12], blob[13], blob[14], blob[15]);
     return buf;
+}
+
+std::string GenerateUuid()
+{
+    using namespace std::chrono;
+
+    auto now = system_clock::now();
+    auto ts = duration_cast<microseconds>(now.time_since_epoch()).count();
+
+    // Use a thread_local random engine seeded from system entropy,
+    // so successive calls from the same thread at the same microsecond
+    // produce distinct UUIDs.
+    thread_local std::mt19937_64 rng(std::random_device{}());
+    uint64_t rand_val = rng();
+
+    // UUID v1-style layout: timestamp (60 bits) + clock_seq (14 bits) + node (48 bits)
+    uint32_t time_low = static_cast<uint32_t>(ts & 0xFFFFFFFF);
+    uint16_t time_mid = static_cast<uint16_t>((ts >> 32) & 0xFFFF);
+    uint16_t time_hi = static_cast<uint16_t>(((ts >> 48) & 0x0FFF) | 0x1000);
+    uint16_t clock_seq = static_cast<uint16_t>((rand_val & 0x3FFF) | 0x8000);
+    uint16_t node_hi = static_cast<uint16_t>((rand_val >> 16) & 0xFFFF);
+    uint32_t node_lo = static_cast<uint32_t>(rand_val >> 32);
+
+    char buf[37];
+    std::snprintf(buf, sizeof(buf),
+                  "%08x-%04x-%04x-%04x-%04x%08x",
+                  time_low, time_mid, time_hi,
+                  clock_seq, node_hi, node_lo);
+    return std::string(buf);
 }
 
 }  // namespace util

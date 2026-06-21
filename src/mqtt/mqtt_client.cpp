@@ -342,39 +342,4 @@ bool MqttClient::TopicMatches(const std::string &subscription,
     return false;
 }
 
-// ===========================================================================
-// MqttPublisher
-// ===========================================================================
-
-MqttPublisher::MqttPublisher(MqttClient *client, const std::string &topic,
-                             int qos, bool retain)
-    : client_(client), topic_(topic), qos_(qos), retain_(retain)
-{
-}
-
-bool MqttPublisher::Publish(const std::string &payload)
-{
-    if (!client_) {
-        spdlog::error("MqttPublisher: client is null, cannot publish to '{}'",
-                      topic_);
-        return false;
-    }
-    return client_->PublishMessage(topic_, payload, qos_, retain_);
-}
-
-bool MqttPublisher::Publish(const void *payload, size_t len)
-{
-    if (!client_) {
-        spdlog::error("MqttPublisher: client is null, cannot publish to '{}'",
-                      topic_);
-        return false;
-    }
-    if (!payload || len == 0) {
-        spdlog::warn("MqttPublisher: empty payload for topic '{}'", topic_);
-        return false;
-    }
-    std::string data(static_cast<const char *>(payload), len);
-    return client_->PublishMessage(topic_, data, qos_, retain_);
-}
-
 }  // namespace cortexlink

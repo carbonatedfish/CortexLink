@@ -19,5 +19,10 @@ std::string BlobToUuid(const std::array<uint8_t, 16> &blob);
 // Convert a 16-byte BLOB (as raw pointer) to a standard UUID string.
 std::string BlobToUuid(const uint8_t *blob);
 
+// Generate a UUID-format string seeded from the current UNIX timestamp.
+// Format: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+// Thread-safe and suitable for MQTT msg_id generation.
+std::string GenerateUuid();
+
 }  // namespace util
 }  // namespace cortexlink
