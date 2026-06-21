@@ -41,6 +41,7 @@ set(CortexLink_UTIL_SRC
 
 set(CortexLink_RULE_ENGINE_SRC
     src/rule_engine/cond_parser.cpp
+    src/rule_engine/rule_engine.cpp
 )
 
 set(CortexLink_DEVICE_SRC

@@ -1,10 +1,12 @@
+#include <atomic>
+#include <csignal>
 #include <cstdlib>
 #include <string>
+#include <thread>
 
 #include <spdlog/spdlog.h>
 
 #include "db/db_table.h"
-#include "util/uuid_util.h"
 #include "db/device_data_table.h"
 #include "db/device_property_table.h"
 #include "db/event_record_table.h"
@@ -12,26 +14,48 @@
 #include "db/event_table.h"
 #include "db/rule_table.h"
 #include "db/user_profile_table.h"
+#include "device/device_manager.h"
+#include "mqtt/mqtt_client.h"
+#include "rule_engine/rule_engine.h"
+#include "util/log_util.h"
 
 using namespace cortexlink;
 
+// Global flag for graceful shutdown on SIGINT / SIGTERM.
+static std::atomic<bool> g_shutdown{false};
+
+static void SignalHandler(int signum)
+{
+    spdlog::info("Signal {} received, initiating graceful shutdown", signum);
+    g_shutdown = true;
+}
+
 int main(int argc, char **argv)
 {
-    // Resolve database path: ~/.cortexlink/cortexlink.db
+    // 1. Install signal handlers.
+    std::signal(SIGINT, SignalHandler);
+    std::signal(SIGTERM, SignalHandler);
+
+    // 2. Resolve paths.
     const char *home = std::getenv("HOME");
     if (!home) {
-        spdlog::error("HOME environment variable not set");
+        fprintf(stderr, "HOME environment variable not set\n");
         return 1;
     }
+    std::string log_dir = std::string(home) + "/.cortexlink/logs";
     std::string db_path = std::string(home) + "/.cortexlink/cortexlink.db";
 
-    // Initialize the database
+    // 3. Initialize logger.
+    util::InitLogger(log_dir, spdlog::level::info);
+    spdlog::info("=== CortexLink starting ===");
+
+    // 4. Initialize database.
     if (!DBTable::Initialize(db_path)) {
         spdlog::error("Failed to initialize database at {}", db_path);
         return 1;
     }
 
-    // Create all tables
+    // 5. Create all tables.
     DevicePropertyTable dev_prop_table;
     EventTable event_table;
     RuleTable rule_table;
@@ -50,41 +74,67 @@ int main(int argc, char **argv)
     all_ok = evt_record_table.CreateTable() && all_ok;
 
     if (!all_ok) {
-        spdlog::error("Failed to create one or more tables");
+        spdlog::error("Failed to create one or more database tables");
+        DBTable::Shutdown();
+        return 1;
+    }
+    spdlog::info("All database tables created/verified");
+
+    // 6. Create MQTT client and connect to the broker.
+    MqttClient mqtt("cortexlink-host");
+    // Uncomment to set credentials if the broker requires them:
+    // mqtt.SetCredentials("username", "password");
+    if (!mqtt.Connect()) {
+        spdlog::error("Failed to connect to MQTT broker");
         DBTable::Shutdown();
         return 1;
     }
 
-    spdlog::info("All tables created successfully at {}", db_path);
-
-    // Quick smoke test: insert and query a device
-    DevicePropertyTable::DeviceProperty dev{};
-    dev.dev_name = "Test Sensor";
-    dev.dev_type = "sensor";
-    dev.dev_subtype = "temperature";
-    dev.dev_state = "online";
-    dev.location = "Lab";
-    dev.user_param = "test device";
-    dev.actions = R"({"actions":[]})";
-    dev.events = R"({"evt_id":[]})";
-    dev.data = R"({"data":[]})";
-    // Use a fixed test UUID
-    std::string test_uuid = "a1b2c3d4-e5f6-4789-ab12-cd34ef567890";
-    auto blob = util::UuidToBlob(test_uuid);
-    dev.dev_id = blob;
-
-    if (dev_prop_table.Upsert(dev)) {
-        spdlog::info("Test device inserted with uuid={}", test_uuid);
+    // 7. Start the MQTT loop on a background thread.
+    if (!mqtt.LoopStart()) {
+        spdlog::error("Failed to start MQTT loop");
+        mqtt.Disconnect();
+        DBTable::Shutdown();
+        return 1;
     }
 
-    auto result = dev_prop_table.GetByDevId(blob);
-    if (result.has_value()) {
-        spdlog::info("Test device queried: name={}, state={}",
-                     result->dev_name, result->dev_state);
+    // 8. Create and start the DeviceManager.
+    DeviceManager dev_mgr(&mqtt);
+    if (!dev_mgr.Start()) {
+        spdlog::error("Failed to start DeviceManager");
+        mqtt.LoopStop();
+        mqtt.Disconnect();
+        DBTable::Shutdown();
+        return 1;
     }
 
-    // Cleanup
+    // 9. Create and start the RuleEngine.
+    RuleEngine rule_engine(&mqtt, &dev_mgr);
+    if (!rule_engine.Start()) {
+        spdlog::error("Failed to start RuleEngine");
+        dev_mgr.Stop();
+        mqtt.LoopStop();
+        mqtt.Disconnect();
+        DBTable::Shutdown();
+        return 1;
+    }
+
+    spdlog::info("CortexLink startup complete — waiting for events");
+
+    // 10. Main loop — wait for shutdown signal.
+    while (!g_shutdown) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
+    // 11. Graceful shutdown (reverse order of startup).
+    spdlog::info("=== CortexLink shutting down ===");
+
+    rule_engine.Stop();
+    dev_mgr.Stop();
+    mqtt.LoopStop();
+    mqtt.Disconnect();
     DBTable::Shutdown();
-    spdlog::info("Database layer smoke test complete");
+
+    spdlog::info("=== CortexLink shutdown complete ===");
     return 0;
 }
