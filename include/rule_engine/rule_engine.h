@@ -117,6 +117,10 @@ private:
 
     LuaSandbox lua_sandbox_;
 
+    // ---- script storage -------------------------------------------------
+
+    std::string script_dir_;  // ~/.cortexlink/scripts/
+
     // ---- MQTT subscription ----------------------------------------------
 
     std::unique_ptr<MqttSubscription> event_sub_;

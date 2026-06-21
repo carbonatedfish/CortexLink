@@ -1,7 +1,9 @@
 #include "rule_engine/rule_engine.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <ctime>
+#include <fstream>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -24,6 +26,14 @@ RuleEngine::RuleEngine(MqttClient *mqtt_client, DeviceManager *device_manager)
     , lua_sandbox_(&device_data_table_, &device_property_table_,
                    mqtt_client_, &rule_table_)
 {
+    // Resolve the script directory: ~/.cortexlink/scripts/
+    const char *home = std::getenv("HOME");
+    if (home) {
+        script_dir_ = std::string(home) + "/.cortexlink/scripts/";
+    } else {
+        script_dir_ = ".cortexlink/scripts/";
+    }
+
     // Create the MQTT subscription but do NOT register it yet (Start() does).
     event_sub_ = std::make_unique<MqttSubscription>(
         "device/+/event/#", 1,
@@ -296,7 +306,26 @@ void RuleEngine::ProcessEvent(const EventTask &task)
             // empty for this event (e.g. "evt_id()" — always-true). Proceed.
         }
 
-        // 4d. Build LuaSandbox event context and execute the action.
+        // 4d. Read the Lua script from disk.
+        std::string script_path = script_dir_ + rule.action;
+        std::ifstream script_file(script_path);
+        if (!script_file.is_open()) {
+            spdlog::error("RuleEngine: rule {} ({}) script file not found: {}",
+                          rule_id, rule.rule_name, script_path);
+            continue;
+        }
+
+        std::string script_text((std::istreambuf_iterator<char>(script_file)),
+                                std::istreambuf_iterator<char>());
+        script_file.close();
+
+        if (script_text.empty()) {
+            spdlog::error("RuleEngine: rule {} ({}) script file is empty: {}",
+                          rule_id, rule.rule_name, script_path);
+            continue;
+        }
+
+        // 4e. Build LuaSandbox event context and execute the action.
         LuaSandbox::EventContext lua_ctx;
         lua_ctx.evt_id = evt_id_str;
         lua_ctx.evt_name = evt_def.evt_name;
@@ -306,7 +335,7 @@ void RuleEngine::ProcessEvent(const EventTask &task)
         spdlog::info("RuleEngine: executing rule {} ({}) for event {}",
                      rule_id, rule.rule_name, evt_def.evt_name);
 
-        bool success = lua_sandbox_.Execute(rule.action, lua_ctx, rule_id);
+        bool success = lua_sandbox_.Execute(script_text, lua_ctx, rule_id);
         if (success) {
             spdlog::info("RuleEngine: rule {} ({}) executed successfully",
                          rule_id, rule.rule_name);
