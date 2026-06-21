@@ -9,6 +9,7 @@
 #include "app/app_manager.h"
 #include "app/app_sql_proxy.h"
 #include "db/db_table.h"
+#include "llm/llm_sql_proxy.h"
 #include "db/device_data_table.h"
 #include "db/device_property_table.h"
 #include "db/event_record_table.h"
@@ -146,16 +147,31 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    // 12. Create and start the LlmSqlProxy (Unix domain socket for LLM).
+    LlmSqlProxy llm_sql_proxy;
+    if (!llm_sql_proxy.Start()) {
+        spdlog::error("Failed to start LlmSqlProxy");
+        sql_proxy.Stop();
+        app_mgr.Stop();
+        rule_engine.Stop();
+        dev_mgr.Stop();
+        mqtt.LoopStop();
+        mqtt.Disconnect();
+        DBTable::Shutdown();
+        return 1;
+    }
+
     spdlog::info("CortexLink startup complete — waiting for events");
 
-    // 12. Main loop — wait for shutdown signal.
+    // 13. Main loop — wait for shutdown signal.
     while (!g_shutdown) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
-    // 13. Graceful shutdown (reverse order of startup).
+    // 14. Graceful shutdown (reverse order of startup).
     spdlog::info("=== CortexLink shutting down ===");
 
+    llm_sql_proxy.Stop();
     sql_proxy.Stop();
     app_mgr.Stop();
     rule_engine.Stop();

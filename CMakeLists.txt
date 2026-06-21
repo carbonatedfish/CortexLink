@@ -62,6 +62,12 @@ set(CortexLink_APP_SRC
     src/app/app_sql_proxy.cpp
 )
 
+# --- LLM SQL proxy module source ---
+set(CortexLink_LLM_SQL_SRC
+    src/llm/llm_sql_strategy.cpp
+    src/llm/llm_sql_proxy.cpp
+)
+
 add_executable(CortexLink
     src/main.cpp
     ${CortexLink_MQTT_SRC}
@@ -71,6 +77,7 @@ add_executable(CortexLink
     ${CortexLink_DEVICE_SRC}
     ${CortexLink_LUA_SRC}
     ${CortexLink_APP_SRC}
+    ${CortexLink_LLM_SQL_SRC}
 )
 target_include_directories(CortexLink PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR} ${LUA_INCLUDE_DIRS})
 target_link_libraries(CortexLink PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3 ${LUA_LIBRARIES} ${CRYPTO_LIB})
