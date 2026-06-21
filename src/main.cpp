@@ -6,6 +6,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "app/app_manager.h"
 #include "db/db_table.h"
 #include "db/device_data_table.h"
 #include "db/device_property_table.h"
@@ -119,16 +120,29 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    // 10. Create and start the AppManager.
+    AppFileTransManager app_mgr(&mqtt);
+    if (!app_mgr.Start()) {
+        spdlog::error("Failed to start AppManager");
+        rule_engine.Stop();
+        dev_mgr.Stop();
+        mqtt.LoopStop();
+        mqtt.Disconnect();
+        DBTable::Shutdown();
+        return 1;
+    }
+
     spdlog::info("CortexLink startup complete — waiting for events");
 
-    // 10. Main loop — wait for shutdown signal.
+    // 11. Main loop — wait for shutdown signal.
     while (!g_shutdown) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
-    // 11. Graceful shutdown (reverse order of startup).
+    // 12. Graceful shutdown (reverse order of startup).
     spdlog::info("=== CortexLink shutting down ===");
 
+    app_mgr.Stop();
     rule_engine.Stop();
     dev_mgr.Stop();
     mqtt.LoopStop();

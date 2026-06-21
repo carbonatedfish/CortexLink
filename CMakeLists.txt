@@ -52,6 +52,14 @@ set(CortexLink_LUA_SRC
     src/lua/lua_sandbox.cpp
 )
 
+# --- OpenSSL (for SHA-256 checksum) ---
+find_library(CRYPTO_LIB crypto REQUIRED)
+
+# --- App module source ---
+set(CortexLink_APP_SRC
+    src/app/app_manager.cpp
+)
+
 add_executable(CortexLink
     src/main.cpp
     ${CortexLink_MQTT_SRC}
@@ -60,6 +68,7 @@ add_executable(CortexLink
     ${CortexLink_RULE_ENGINE_SRC}
     ${CortexLink_DEVICE_SRC}
     ${CortexLink_LUA_SRC}
+    ${CortexLink_APP_SRC}
 )
 target_include_directories(CortexLink PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR} ${LUA_INCLUDE_DIRS})
-target_link_libraries(CortexLink PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3 ${LUA_LIBRARIES})
+target_link_libraries(CortexLink PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3 ${LUA_LIBRARIES} ${CRYPTO_LIB})
