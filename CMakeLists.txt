@@ -19,6 +19,10 @@ find_library(MOSQUITTOPP_LIB mosquittopp REQUIRED)
 find_path(MOSQUITTOPP_INCLUDE_DIR mosquittopp.h REQUIRED)
 # end
 
+set(CortexLink_MQTT_SRC
+    src/mqtt/mqtt_client.cpp
+)
+
 set(CortexLink_DB_SRC 
     src/db/db_table.cpp
     src/db/device_property_table.cpp
@@ -43,13 +47,18 @@ set(CortexLink_DEVICE_SRC
     src/device/device_manager.cpp
 )
 
+set(CortexLink_LUA_SRC
+    src/lua/lua_sandbox.cpp
+)
+
 add_executable(CortexLink
     src/main.cpp
-    src/mqtt/mqtt_client.cpp
+    ${CortexLink_MQTT_SRC}
     ${CortexLink_UTIL_SRC}
     ${CortexLink_DB_SRC}
     ${CortexLink_RULE_ENGINE_SRC}
     ${CortexLink_DEVICE_SRC}
+    ${CortexLink_LUA_SRC}
 )
 target_include_directories(CortexLink PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR} ${LUA_INCLUDE_DIRS})
 target_link_libraries(CortexLink PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3 ${LUA_LIBRARIES})
