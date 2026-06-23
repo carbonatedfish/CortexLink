@@ -2,13 +2,6 @@
 
 #include <chrono>
 #include <ctime>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/un.h>
-#include <unistd.h>
-
-#include <cstring>
-#include <vector>
 
 #include <spdlog/spdlog.h>
 
@@ -20,10 +13,7 @@ namespace cortexlink {
 // LlmSqlProxy — Construction / Destruction
 // ============================================================================
 
-LlmSqlProxy::LlmSqlProxy()
-    : socket_path_(SocketPathOrDefault())
-{
-}
+LlmSqlProxy::LlmSqlProxy() = default;
 
 LlmSqlProxy::~LlmSqlProxy()
 {
@@ -31,21 +21,12 @@ LlmSqlProxy::~LlmSqlProxy()
 }
 
 // ============================================================================
-// LlmSqlProxy — Path Configuration
+// LlmSqlProxy — Port Configuration
 // ============================================================================
 
-void LlmSqlProxy::SetSocketPath(const std::string &path)
+void LlmSqlProxy::SetPort(int port)
 {
-    socket_path_ = path;
-}
-
-std::string LlmSqlProxy::SocketPathOrDefault()
-{
-    const char *home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/.cortexlink/llm_sql.sock";
-    }
-    return "/tmp/cortexlink_llm_sql.sock";
+    port_ = port;
 }
 
 // ============================================================================
@@ -59,22 +40,34 @@ bool LlmSqlProxy::Start()
         return true;
     }
 
-    running_ = true;
-    accept_thread_ = std::thread(&LlmSqlProxy::AcceptLoop, this);
+    server_ = std::make_unique<httplib::Server>();
 
-    // Give the thread a moment to set up the socket.
-    // If it fails, running_ will be set back to false.
+    server_->Post("/sql", [this](const httplib::Request &req,
+                                 httplib::Response &res) {
+        HandleRequest(req, res);
+    });
+
+    running_ = true;
+    server_thread_ = std::thread([this]() {
+        if (!server_->listen("0.0.0.0", port_)) {
+            spdlog::error("LlmSqlProxy: failed to listen on port {}", port_);
+        }
+        running_ = false;
+    });
+
+    // Give the thread a moment to start listening.
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     if (!running_) {
-        // AcceptLoop failed and cleared the flag.
-        if (accept_thread_.joinable()) {
-            accept_thread_.join();
+        // listen failed and cleared the flag.
+        if (server_thread_.joinable()) {
+            server_thread_.join();
         }
+        server_.reset();
         return false;
     }
 
-    spdlog::info("LlmSqlProxy: started (listening on {})", socket_path_);
+    spdlog::info("LlmSqlProxy: started (HTTP on port {})", port_);
     return true;
 }
 
@@ -84,172 +77,51 @@ void LlmSqlProxy::Stop()
 
     running_ = false;
 
-    // Close the listen socket to unblock accept().
-    if (listen_fd_ >= 0) {
-        close(listen_fd_);
-        listen_fd_ = -1;
+    if (server_) {
+        server_->stop();
     }
 
-    if (accept_thread_.joinable()) {
-        accept_thread_.join();
+    if (server_thread_.joinable()) {
+        server_thread_.join();
     }
+
+    server_.reset();
 
     spdlog::info("LlmSqlProxy: stopped");
 }
 
 // ============================================================================
-// LlmSqlProxy — AcceptLoop (runs on dedicated thread)
+// LlmSqlProxy — HTTP Request Handler
 // ============================================================================
 
-void LlmSqlProxy::AcceptLoop()
-{
-    // 1. Create socket
-    listen_fd_ = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (listen_fd_ < 0) {
-        spdlog::error("LlmSqlProxy: socket() failed: {}", strerror(errno));
-        running_ = false;
-        return;
-    }
-
-    // 2. Unlink stale socket file from a previous run
-    unlink(socket_path_.c_str());
-
-    // 3. Bind
-    struct sockaddr_un addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, socket_path_.c_str(), sizeof(addr.sun_path) - 1);
-
-    if (bind(listen_fd_, reinterpret_cast<struct sockaddr *>(&addr),
-             sizeof(addr)) < 0) {
-        spdlog::error("LlmSqlProxy: bind({}) failed: {}",
-                      socket_path_, strerror(errno));
-        close(listen_fd_);
-        listen_fd_ = -1;
-        running_ = false;
-        return;
-    }
-
-    // 4. Listen
-    if (listen(listen_fd_, 5) < 0) {
-        spdlog::error("LlmSqlProxy: listen() failed: {}", strerror(errno));
-        close(listen_fd_);
-        listen_fd_ = -1;
-        unlink(socket_path_.c_str());
-        running_ = false;
-        return;
-    }
-
-    // 5. Restrict access to owner only
-    chmod(socket_path_.c_str(), 0600);
-
-    spdlog::info("LlmSqlProxy: listening on {}", socket_path_);
-
-    // 6. Accept loop
-    while (running_) {
-        int client_fd = accept(listen_fd_, nullptr, nullptr);
-
-        if (!running_) break;
-
-        if (client_fd < 0) {
-            if (errno == EINTR) continue;
-            spdlog::warn("LlmSqlProxy: accept() failed: {}", strerror(errno));
-            continue;
-        }
-
-        HandleClient(client_fd);
-        close(client_fd);
-    }
-
-    // 7. Cleanup
-    if (listen_fd_ >= 0) {
-        close(listen_fd_);
-        listen_fd_ = -1;
-    }
-    unlink(socket_path_.c_str());
-}
-
-// ============================================================================
-// LlmSqlProxy — HandleClient
-// ============================================================================
-
-void LlmSqlProxy::HandleClient(int client_fd)
+void LlmSqlProxy::HandleRequest(const httplib::Request &req,
+                                httplib::Response &res)
 {
     nlohmann::json request;
-    if (!ReadRequest(client_fd, request)) {
-        return;  // error response already sent
-    }
-
-    ProcessAndRespond(client_fd, request);
-}
-
-// ============================================================================
-// LlmSqlProxy — ReadRequest
-// ============================================================================
-
-bool LlmSqlProxy::ReadRequest(int client_fd, nlohmann::json &request)
-{
-    std::string data;
-    char buf[4096];
-    const size_t kMaxRequest = 65536;
-
-    while (data.size() < kMaxRequest) {
-        ssize_t n = read(client_fd, buf, sizeof(buf));
-        if (n < 0) {
-            if (errno == EINTR) continue;
-            spdlog::warn("LlmSqlProxy: read() failed: {}", strerror(errno));
-            return false;
-        }
-        if (n == 0) {
-            // EOF — client closed write side (or disconnected)
-            break;
-        }
-        data.append(buf, static_cast<size_t>(n));
-        if (data.find('\n') != std::string::npos) {
-            break;
-        }
-    }
-
-    // Extract the first line (up to \n)
-    auto pos = data.find('\n');
-    if (pos == std::string::npos) {
-        spdlog::warn("LlmSqlProxy: request too large or missing newline "
-                     "(received {} bytes)", data.size());
-        nlohmann::json err;
-        err["resp"] = kRespInvalidJson;
-        err["rows"] = nlohmann::json::array();
-        err["message"] = "Request too large or missing newline";
-        err["timestamp"] = CurrentTimestamp();
-        std::string resp_str = err.dump() + "\n";
-        write(client_fd, resp_str.data(), resp_str.size());
-        return false;
-    }
-
-    std::string line = data.substr(0, pos);
 
     try {
-        request = nlohmann::json::parse(line);
+        request = nlohmann::json::parse(req.body);
     } catch (const nlohmann::json::parse_error &e) {
         spdlog::warn("LlmSqlProxy: failed to parse request JSON: {}", e.what());
-        SendResponse(client_fd, kRespInvalidJson, nlohmann::json::array());
-        return false;
+        SendJsonResponse(res, BuildResponse(kRespInvalidJson,
+                                            nlohmann::json::array()));
+        return;
     }
 
-    return true;
+    nlohmann::json response = ProcessRequest(request);
+    SendJsonResponse(res, response);
 }
 
 // ============================================================================
-// LlmSqlProxy — ProcessAndRespond
+// LlmSqlProxy — Core Dispatch
 // ============================================================================
 
-void LlmSqlProxy::ProcessAndRespond(int client_fd,
-                                    const nlohmann::json &request)
+nlohmann::json LlmSqlProxy::ProcessRequest(const nlohmann::json &request)
 {
     // 1. Validate cmd field
     if (!request.contains("cmd") || !request["cmd"].is_string()) {
         spdlog::warn("LlmSqlProxy: request missing required field 'cmd'");
-        SendResponse(client_fd, kRespMissingField, nlohmann::json::array());
-        return;
+        return BuildResponse(kRespMissingField, nlohmann::json::array());
     }
 
     std::string cmd = request["cmd"].get<std::string>();
@@ -258,16 +130,14 @@ void LlmSqlProxy::ProcessAndRespond(int client_fd,
     LlmSqlStrategy *strategy = router_.Lookup(cmd);
     if (!strategy) {
         spdlog::warn("LlmSqlProxy: unknown cmd '{}'", cmd);
-        SendResponse(client_fd, kRespUnknownCmd, nlohmann::json::array());
-        return;
+        return BuildResponse(kRespUnknownCmd, nlohmann::json::array());
     }
 
     // 3. Validate params
     nlohmann::json params = request.value("params", nlohmann::json::object());
     if (!strategy->ValidateParams(params)) {
         spdlog::warn("LlmSqlProxy: invalid params for cmd '{}'", cmd);
-        SendResponse(client_fd, kRespInvalidParams, nlohmann::json::array());
-        return;
+        return BuildResponse(kRespInvalidParams, nlohmann::json::array());
     }
 
     // 4. Build SQL
@@ -298,22 +168,21 @@ void LlmSqlProxy::ProcessAndRespond(int client_fd,
 
     if (!ok) {
         spdlog::error("LlmSqlProxy: SQL execution failed for cmd '{}'", cmd);
-        SendResponse(client_fd, kRespSqlError, nlohmann::json::array());
-        return;
+        return BuildResponse(kRespSqlError, nlohmann::json::array());
     }
 
     spdlog::info("LlmSqlProxy: cmd '{}' returned {} rows",
                  cmd, rows.size());
-    SendResponse(client_fd, kRespOk, rows, extra);
+    return BuildResponse(kRespOk, rows, extra);
 }
 
 // ============================================================================
-// LlmSqlProxy — SendResponse
+// LlmSqlProxy — Response Helpers
 // ============================================================================
 
-void LlmSqlProxy::SendResponse(int client_fd, int resp_code,
-                               const nlohmann::json &rows,
-                               const nlohmann::json &extra)
+nlohmann::json LlmSqlProxy::BuildResponse(int resp_code,
+                                           const nlohmann::json &rows,
+                                           const nlohmann::json &extra)
 {
     nlohmann::json response;
     response["resp"] = resp_code;
@@ -338,24 +207,13 @@ void LlmSqlProxy::SendResponse(int client_fd, int resp_code,
         }
     }
 
-    std::string resp_str = response.dump() + "\n";
+    return response;
+}
 
-    // Write all bytes (handle partial writes and EINTR)
-    size_t written = 0;
-    while (written < resp_str.size()) {
-        ssize_t n = write(client_fd, resp_str.data() + written,
-                          resp_str.size() - written);
-        if (n < 0) {
-            if (errno == EINTR) continue;
-            spdlog::warn("LlmSqlProxy: write() failed: {}", strerror(errno));
-            break;
-        }
-        if (n == 0) {
-            // Should not happen for a stream socket, but handle gracefully.
-            break;
-        }
-        written += static_cast<size_t>(n);
-    }
+void LlmSqlProxy::SendJsonResponse(httplib::Response &res,
+                                    const nlohmann::json &body)
+{
+    res.set_content(body.dump(), "application/json");
 }
 
 // ============================================================================

@@ -1,11 +1,14 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <thread>
 
 #include <nlohmann/json.hpp>
 #include <sqlite3.h>
+
+#include <httplib/httplib.h>
 
 #include "db/db_table.h"
 #include "llm/llm_sql_strategy.h"
@@ -25,15 +28,15 @@ public:
     using DBTable::ExecuteWrite;
 };
 
-// LlmSqlProxy listens on a Unix domain socket for LLM (OpenClaw) SQL requests.
+// LlmSqlProxy listens on an HTTP port for LLM (OpenClaw) SQL requests.
 // It uses the strategy pattern (LlmSqlStrategy + LlmCmdRouter) to dispatch
 // commands to pre-defined SQL templates with parameter binding.
 //
 // Supports both read operations (device_property, event, rule, event_record)
 // and write operations (rule insert/update/delete/enable).
 //
-// Connection model: one JSON request per connection (accept → read → process
-// → write → close). Newline-delimited JSON protocol.
+// Protocol: HTTP POST /sql with JSON body {"cmd":"...", "params":{...}}.
+// Response is JSON: {"resp":0, "rows":[...], "message":"ok", "timestamp":"..."}.
 class LlmSqlProxy {
 public:
     LlmSqlProxy();
@@ -42,15 +45,15 @@ public:
     LlmSqlProxy(const LlmSqlProxy &) = delete;
     LlmSqlProxy &operator=(const LlmSqlProxy &) = delete;
 
-    // Set the Unix socket path before Start().
-    // Default: ~/.cortexlink/llm_sql.sock
-    void SetSocketPath(const std::string &path);
+    // Set the HTTP listen port before Start().
+    // Default: 8899
+    void SetPort(int port);
 
-    // Create socket, bind, listen, start accept thread.
-    // Returns false if socket setup fails.
+    // Create HTTP server and start the listen thread.
+    // Returns false if server setup fails.
     bool Start();
 
-    // Signal accept thread to stop, close socket, unlink socket file.
+    // Stop the server and join the listen thread.
     void Stop();
 
 private:
@@ -61,34 +64,30 @@ private:
     static constexpr int kRespInvalidParams = 4;
     static constexpr int kRespSqlError      = 5;
 
-    // Thread entry point. Creates socket, accepts connections.
-    void AcceptLoop();
+    // HTTP POST /sql handler.
+    void HandleRequest(const httplib::Request &req, httplib::Response &res);
 
-    // Handle a single client connection (read request, dispatch, respond).
-    void HandleClient(int client_fd);
+    // Core dispatch: validate cmd, look up strategy, execute SQL.
+    // Returns the full JSON response envelope.
+    nlohmann::json ProcessRequest(const nlohmann::json &request);
 
-    // Read a newline-delimited JSON request from the socket.
-    // On failure, sends an error response and returns false.
-    bool ReadRequest(int client_fd, nlohmann::json &request);
-
-    // Dispatch the request via LlmCmdRouter, execute SQL, send response.
-    void ProcessAndRespond(int client_fd, const nlohmann::json &request);
-
-    // Serialize and send a JSON response over the socket.
+    // Build the standard JSON response envelope.
     // Extra fields (e.g. rule_id from PostExecute) are merged in.
-    void SendResponse(int client_fd, int resp_code,
-                      const nlohmann::json &rows,
-                      const nlohmann::json &extra = nullptr);
+    nlohmann::json BuildResponse(int resp_code, const nlohmann::json &rows,
+                                  const nlohmann::json &extra = nullptr);
+
+    // Write a JSON object as the HTTP response body.
+    static void SendJsonResponse(httplib::Response &res,
+                                 const nlohmann::json &body);
 
     // Helpers
     static std::string CurrentTimestamp();
     static nlohmann::json RowToJson(sqlite3_stmt *stmt);
-    static std::string SocketPathOrDefault();
 
-    std::string socket_path_;
-    int listen_fd_ = -1;
+    int port_ = 8899;
     std::atomic<bool> running_{false};
-    std::thread accept_thread_;
+    std::thread server_thread_;
+    std::unique_ptr<httplib::Server> server_;
     LlmSqlTable db_;
     LlmCmdRouter router_;
 };
