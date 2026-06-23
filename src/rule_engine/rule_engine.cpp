@@ -34,11 +34,17 @@ RuleEngine::RuleEngine(MqttClient *mqtt_client, DeviceManager *device_manager)
         script_dir_ = ".cortexlink/scripts/";
     }
 
-    // Create the MQTT subscription but do NOT register it yet (Start() does).
+    // Create the MQTT subscriptions but do NOT register them yet (Start() does).
     event_sub_ = std::make_unique<MqttSubscription>(
         "device/+/event/#", 1,
         [this](const std::string &topic, const std::string &payload) {
             OnDeviceEvent(topic, payload);
+        });
+
+    data_sub_ = std::make_unique<MqttSubscription>(
+        "device/+/data/+", 1,
+        [this](const std::string &topic, const std::string &payload) {
+            OnDeviceData(topic, payload);
         });
 }
 
@@ -63,10 +69,15 @@ bool RuleEngine::Start()
         return false;
     }
 
+    if (!mqtt_client_->Subscribe(data_sub_.get())) {
+        spdlog::error("RuleEngine: failed to subscribe to device/+/data/+");
+        return false;
+    }
+
     running_ = true;
     worker_thread_ = std::thread(&RuleEngine::WorkerLoop, this);
 
-    spdlog::info("RuleEngine: started (subscribed to device/+/event/#)");
+    spdlog::info("RuleEngine: started (subscribed to device/+/event/# and device/+/data/+)");
     return true;
 }
 
@@ -89,6 +100,9 @@ void RuleEngine::Stop()
     // Unsubscribe from MQTT.
     if (mqtt_client_ && event_sub_) {
         mqtt_client_->Unsubscribe(event_sub_.get());
+    }
+    if (mqtt_client_ && data_sub_) {
+        mqtt_client_->Unsubscribe(data_sub_.get());
     }
 
     spdlog::info("RuleEngine: stopped");
@@ -174,6 +188,89 @@ void RuleEngine::OnDeviceEvent(const std::string &topic,
         event_queue_.push(std::move(task));
     }
     queue_cv_.notify_one();
+}
+
+// ===========================================================================
+// MQTT data callback (mosquitto loop thread)
+// ===========================================================================
+
+void RuleEngine::OnDeviceData(const std::string &topic,
+                              const std::string &payload)
+{
+    // Parse the JSON payload.
+    json j;
+    try {
+        j = json::parse(payload);
+    } catch (const json::parse_error &e) {
+        spdlog::error("RuleEngine: failed to parse data payload: {}", e.what());
+        return;
+    }
+
+    // Extract data_name.
+    std::string data_name;
+    if (j.contains("data_name") && j["data_name"].is_string()) {
+        data_name = j["data_name"].get<std::string>();
+    }
+    if (data_name.empty()) {
+        spdlog::warn("RuleEngine: data payload missing data_name, topic={}", topic);
+        return;
+    }
+
+    // Extract data_val.
+    std::string data_val;
+    if (j.contains("data_val")) {
+        if (j["data_val"].is_string()) {
+            data_val = j["data_val"].get<std::string>();
+        } else {
+            data_val = j["data_val"].dump();
+        }
+    }
+
+    // Extract device UUID from the topic.
+    std::string dev_uuid_str = ExtractDevUuid(topic);
+    if (dev_uuid_str.empty()) {
+        spdlog::warn("RuleEngine: failed to extract dev UUID from data topic: {}",
+                     topic);
+        return;
+    }
+
+    std::array<uint8_t, 16> dev_id_blob = util::UuidToBlob(dev_uuid_str);
+
+    // Try to infer data_type from the device's metadata.
+    std::string data_type = "str";
+    auto dev_opt = device_property_table_.GetByDevId(dev_id_blob);
+    if (dev_opt.has_value() && !dev_opt->data.empty()) {
+        try {
+            json data_meta = json::parse(dev_opt->data);
+            if (data_meta.contains("data") && data_meta["data"].is_array()) {
+                for (const auto &d : data_meta["data"]) {
+                    if (d.contains("d_name") && d["d_name"].is_string()
+                        && d["d_name"].get<std::string>() == data_name
+                        && d.contains("type") && d["type"].is_string()) {
+                        data_type = d["type"].get<std::string>();
+                        break;
+                    }
+                }
+            }
+        } catch (const json::parse_error &) {
+            // Fall through with default "str".
+        }
+    }
+
+    // Upsert into device_data table.
+    DeviceDataTable::DeviceData data;
+    data.dev_id = dev_id_blob;
+    data.data_name = data_name;
+    data.data_type = data_type;
+    data.data_val = data_val;
+
+    if (device_data_table_.Upsert(data)) {
+        spdlog::debug("RuleEngine: data upserted dev={} name={} val={} type={}",
+                      dev_uuid_str, data_name, data_val, data_type);
+    } else {
+        spdlog::error("RuleEngine: failed to upsert data dev={} name={}",
+                      dev_uuid_str, data_name);
+    }
 }
 
 // ===========================================================================

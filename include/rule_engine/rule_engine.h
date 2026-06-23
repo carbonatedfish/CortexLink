@@ -62,9 +62,10 @@ public:
                      const std::string &params_json);
 
 private:
-    // ---- MQTT callback (fires on mosquitto loop thread) ------------------
+    // ---- MQTT callbacks (fire on mosquitto loop thread) ------------------
 
     void OnDeviceEvent(const std::string &topic, const std::string &payload);
+    void OnDeviceData(const std::string &topic, const std::string &payload);
 
     // ---- internal event representation -----------------------------------
 
@@ -86,7 +87,7 @@ private:
     // ---- helpers --------------------------------------------------------
 
     // Extract the device UUID string from a topic of the form
-    // "device/<uuid>/event/<type>".
+    // "device/<uuid>/event/<type>" or "device/<uuid>/data/<type>".
     static std::string ExtractDevUuid(const std::string &topic);
 
     // Convert a params JSON array of the form
@@ -121,9 +122,10 @@ private:
 
     std::string script_dir_;  // ~/.cortexlink/scripts/
 
-    // ---- MQTT subscription ----------------------------------------------
+    // ---- MQTT subscriptions ---------------------------------------------
 
     std::unique_ptr<MqttSubscription> event_sub_;
+    std::unique_ptr<MqttSubscription> data_sub_;
 
     // ---- worker thread and event queue ----------------------------------
 
