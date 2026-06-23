@@ -66,6 +66,7 @@ set(CortexLink_APP_SRC
 set(CortexLink_LLM_SQL_SRC
     src/llm/llm_sql_strategy.cpp
     src/llm/llm_sql_proxy.cpp
+    src/llm/open_claw_client.cpp
 )
 
 add_executable(CortexLink
