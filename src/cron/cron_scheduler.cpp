@@ -574,8 +574,6 @@ void CronScheduler::SchedulerLoop()
             snapshot = entries_;
         }
 
-        bool modified = false;
-
         for (auto &entry : snapshot) {
             // Dedup: skip if already fired this minute.
             {
@@ -652,55 +650,35 @@ void CronScheduler::SchedulerLoop()
             rule_engine_->InjectEvent(evt_id_blob, dev_id_blob,
                                       "cron_trigger", params_json);
 
-            // Handle trigger count.
+            // Handle trigger count — persist immediately after each fire.
             if (entry.trigger_count > 0) {
                 entry.trigger_count--;
-                modified = true;
 
-                if (entry.trigger_count == 0) {
-                    spdlog::info("CronScheduler: job {} trigger_count reached 0, removing",
-                                 entry.id);
-                    // Mark for removal (will be removed below).
-                }
-            }
-        }
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
 
-        // Apply trigger_count changes and remove depleted entries.
-        if (modified) {
-            std::lock_guard<std::mutex> lock(mutex_);
-
-            // Build a set of IDs to remove.
-            std::vector<std::string> to_remove;
-            for (auto &snap_entry : snapshot) {
-                if (snap_entry.trigger_count == 0) {
-                    to_remove.push_back(snap_entry.id);
-                }
-            }
-
-            // Update counts and remove depleted entries.
-            for (auto &entry : entries_) {
-                for (auto &snap_entry : snapshot) {
-                    if (entry.id == snap_entry.id) {
-                        entry.trigger_count = snap_entry.trigger_count;
-                        break;
+                    if (entry.trigger_count == 0) {
+                        spdlog::info("CronScheduler: job {} trigger_count reached 0, removing",
+                                     entry.id);
+                        entries_.erase(
+                            std::remove_if(entries_.begin(), entries_.end(),
+                                           [&entry](const CronEntry &e) {
+                                               return e.id == entry.id;
+                                           }),
+                            entries_.end());
+                        last_fired_minute_.erase(entry.id);
+                    } else {
+                        for (auto &e : entries_) {
+                            if (e.id == entry.id) {
+                                e.trigger_count = entry.trigger_count;
+                                break;
+                            }
+                        }
                     }
+
+                    SaveCrontab();
                 }
             }
-
-            entries_.erase(
-                std::remove_if(entries_.begin(), entries_.end(),
-                               [&to_remove](const CronEntry &e) {
-                                   return std::find(to_remove.begin(),
-                                                    to_remove.end(),
-                                                    e.id) != to_remove.end();
-                               }),
-                entries_.end());
-
-            for (const auto &id : to_remove) {
-                last_fired_minute_.erase(id);
-            }
-
-            SaveCrontab();
         }
     }
 
