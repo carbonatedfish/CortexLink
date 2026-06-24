@@ -79,6 +79,8 @@ private:
                      const std::string &payload);
     void OnDeviceResponse(const std::string &topic,
                           const std::string &payload);
+    void OnBroadcastConfig(const std::string &topic,
+                           const std::string &payload);
 
     // ---- background thread ----------------------------------------------
 
@@ -99,6 +101,7 @@ private:
     std::unique_ptr<MqttSubscription> broadcast_online_sub_;
     std::unique_ptr<MqttSubscription> heartbeat_sub_;
     std::unique_ptr<MqttSubscription> device_resp_sub_;
+    std::unique_ptr<MqttSubscription> broadcast_config_sub_;
 
     // ---- heartbeat tracking ---------------------------------------------
     // dev_uuid_string → last heartbeat timestamp (steady clock)

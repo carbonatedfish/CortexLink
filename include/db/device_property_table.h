@@ -47,6 +47,14 @@ public:
     // Update only the dev_state field.
     bool UpdateState(const std::array<uint8_t, 16> &dev_id,
                      const std::string &state);
+
+    // Partial update for configurable fields (dev_name, location, user_param).
+    // Each field is optional; only provided fields are written to the DB.
+    // At least one field must have a value, or the call returns false.
+    bool UpdateConfigFields(const std::array<uint8_t, 16> &dev_id,
+                             const std::optional<std::string> &dev_name = std::nullopt,
+                             const std::optional<std::string> &location = std::nullopt,
+                             const std::optional<std::string> &user_param = std::nullopt);
 };
 
 }  // namespace cortexlink

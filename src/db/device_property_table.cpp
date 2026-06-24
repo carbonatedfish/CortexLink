@@ -196,4 +196,50 @@ bool DevicePropertyTable::UpdateState(
     return ExecuteWrite(sql, bind);
 }
 
+bool DevicePropertyTable::UpdateConfigFields(
+    const std::array<uint8_t, 16> &dev_id,
+    const std::optional<std::string> &dev_name,
+    const std::optional<std::string> &location,
+    const std::optional<std::string> &user_param)
+{
+    if (!dev_name.has_value() && !location.has_value() && !user_param.has_value()) {
+        spdlog::warn("DevicePropertyTable::UpdateConfigFields: no fields to update");
+        return false;
+    }
+
+    // Build SET clause dynamically. Only hardcoded column names are
+    // concatenated into the SQL; all user-supplied values go through
+    // sqlite3_bind_text — safe from SQL injection.
+    std::string sql = "UPDATE device_property SET ";
+    if (dev_name.has_value())   sql += "dev_name=?,";
+    if (location.has_value())   sql += "location=?,";
+    if (user_param.has_value()) sql += "user_param=?,";
+    sql.pop_back();  // remove trailing comma
+    sql += " WHERE dev_id=?;";
+
+    auto bind = [&dev_id, &dev_name, &location, &user_param](sqlite3_stmt *stmt) -> int {
+        int idx = 1;
+        if (dev_name.has_value()) {
+            sqlite3_bind_text(stmt, idx++, dev_name->c_str(), -1, SQLITE_STATIC);
+        }
+        if (location.has_value()) {
+            sqlite3_bind_text(stmt, idx++, location->c_str(), -1, SQLITE_STATIC);
+        }
+        if (user_param.has_value()) {
+            sqlite3_bind_text(stmt, idx++, user_param->c_str(), -1, SQLITE_STATIC);
+        }
+        sqlite3_bind_blob(stmt, idx, dev_id.data(),
+                          static_cast<int>(dev_id.size()), SQLITE_STATIC);
+        return SQLITE_OK;
+    };
+
+    if (!ExecuteWrite(sql, bind)) {
+        spdlog::error("DevicePropertyTable::UpdateConfigFields: SQL failed");
+        return false;
+    }
+
+    spdlog::debug("DevicePropertyTable::UpdateConfigFields: success");
+    return true;
+}
+
 }  // namespace cortexlink

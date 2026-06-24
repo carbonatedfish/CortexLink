@@ -1,5 +1,7 @@
 #include "device/device_manager.h"
 
+#include <optional>
+
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
 
@@ -31,6 +33,12 @@ DeviceManager::DeviceManager(MqttClient *client)
         "device/+/resp/s2m", 1,
         [this](const std::string &topic, const std::string &payload) {
             OnDeviceResponse(topic, payload);
+        });
+
+    broadcast_config_sub_ = std::make_unique<MqttSubscription>(
+        "broadcast/config", 1,
+        [this](const std::string &topic, const std::string &payload) {
+            OnBroadcastConfig(topic, payload);
         });
 }
 
@@ -65,10 +73,15 @@ bool DeviceManager::Start()
         return false;
     }
 
+    if (!mqtt_client_->Subscribe(broadcast_config_sub_.get())) {
+        spdlog::error("DeviceManager: failed to subscribe to broadcast/config");
+        return false;
+    }
+
     running_ = true;
     heartbeat_thread_ = std::thread(&DeviceManager::HeartbeatCheckLoop, this);
 
-    spdlog::info("DeviceManager: started (3 subscriptions, heartbeat check every 5s)");
+    spdlog::info("DeviceManager: started (4 subscriptions, heartbeat check every 5s)");
     return true;
 }
 
@@ -382,6 +395,89 @@ void DeviceManager::OnDeviceResponse(const std::string &topic,
         }
         pending_requests_.erase(it);
         spdlog::debug("DeviceManager: reply matched for msg_id={}", msg_id);
+    }
+}
+
+void DeviceManager::OnBroadcastConfig(const std::string & /*topic*/,
+                                       const std::string &payload)
+{
+    // 1. Parse JSON
+    nlohmann::json j;
+    try {
+        j = nlohmann::json::parse(payload);
+    } catch (const nlohmann::json::parse_error &e) {
+        spdlog::error("DeviceManager: broadcast/config JSON parse error: {}", e.what());
+        return;
+    }
+
+    // 2. Extract dev_id (required)
+    std::string dev_id_str = j.value("dev_id", "");
+    if (dev_id_str.empty()) {
+        spdlog::error("DeviceManager: broadcast/config missing dev_id");
+        return;
+    }
+
+    // 3. Check device exists in DB
+    auto dev_id_blob = util::UuidToBlob(dev_id_str);
+    auto existing = device_table_.GetByDevId(dev_id_blob);
+    if (!existing.has_value()) {
+        spdlog::error("DeviceManager: broadcast/config device not found: {}",
+                      dev_id_str);
+        return;
+    }
+
+    // 4. Extract optional config fields
+    std::optional<std::string> dev_name;
+    std::optional<std::string> location;
+    std::optional<std::string> user_param;
+
+    if (j.contains("dev_name") && !j["dev_name"].is_null()) {
+        dev_name = j["dev_name"].get<std::string>();
+    }
+    if (j.contains("location") && !j["location"].is_null()) {
+        location = j["location"].get<std::string>();
+    }
+    if (j.contains("user_param") && !j["user_param"].is_null()) {
+        user_param = j["user_param"].get<std::string>();
+    }
+
+    // At least one config field must be present
+    if (!dev_name.has_value() && !location.has_value() && !user_param.has_value()) {
+        spdlog::warn("DeviceManager: broadcast/config no config fields for dev={}",
+                     dev_id_str);
+        return;
+    }
+
+    // 5. Partial update in database
+    if (!device_table_.UpdateConfigFields(dev_id_blob,
+                                          dev_name, location, user_param)) {
+        spdlog::error("DeviceManager: DB update failed for device {}", dev_id_str);
+        return;
+    }
+
+    spdlog::info("DeviceManager: config updated for device {}", dev_id_str);
+
+    // 6. Forward config to the device via device/{uuid}/config
+    nlohmann::json config_msg;
+    if (dev_name.has_value())   config_msg["dev_name"]   = *dev_name;
+    if (location.has_value())   config_msg["location"]   = *location;
+    if (user_param.has_value()) config_msg["user_param"] = *user_param;
+
+    std::string config_topic = "device/" + dev_id_str + "/config";
+    if (!Send(config_topic, config_msg.dump())) {
+        spdlog::warn("DeviceManager: failed to forward config to {}",
+                     config_topic);
+    }
+
+    // 7. Notify APP to reload device properties
+    nlohmann::json reload_msg;
+    reload_msg["act_id"] = "reload_device";
+    reload_msg["params"] = nlohmann::json::object();
+
+    std::string reload_topic = "device/" + dev_id_str + "/action/reload_device";
+    if (!Send(reload_topic, reload_msg.dump())) {
+        spdlog::warn("DeviceManager: failed to send reload_device action to {}",
+                     reload_topic);
     }
 }
 
