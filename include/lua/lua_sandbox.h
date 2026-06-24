@@ -14,18 +14,20 @@ namespace cortexlink {
 class DeviceDataTable;
 class DevicePropertyTable;
 class MqttClient;
+class OpenClawClient;
 class RuleTable;
 
 // LuaSandbox creates an isolated Lua 5.4 execution environment per script
 // invocation. It enforces resource limits (8 MB memory, 5 M instructions,
 // 3 s wall-clock timeout) and exposes a curated set of host API functions
-// to Lua scripts: get_data, do_action, publish, log, get_device_state.
+// to Lua scripts: get_data, do_action, publish, log, get_device_state,
+// request_rule.
 //
 // Dependencies are injected via the constructor as raw pointers (the caller
 // guarantees they outlive the LuaSandbox instance).
 //
 // Usage:
-//   LuaSandbox sandbox(&dev_data, &dev_prop, &mqtt, &rules);
+//   LuaSandbox sandbox(&dev_data, &dev_prop, &mqtt, &rules, &open_claw);
 //   LuaSandbox::EventContext evt{...};
 //   sandbox.Execute(rule.action, evt, rule.rule_id);
 class LuaSandbox {
@@ -50,7 +52,8 @@ public:
     LuaSandbox(DeviceDataTable *device_data_table,
                DevicePropertyTable *device_property_table,
                MqttClient *mqtt_client,
-               RuleTable *rule_table);
+               RuleTable *rule_table,
+               OpenClawClient *open_claw_client);
 
     ~LuaSandbox() = default;
 
@@ -112,6 +115,7 @@ private:
     static int PublishFn(lua_State *L);
     static int LogFn(lua_State *L);
     static int GetDeviceStateFn(lua_State *L);
+    static int RequestRuleFn(lua_State *L);
 
     // ---- sandbox enforcement ----------------------------------------------
     static void *LuaAlloc(void *ud, void *ptr, size_t osize, size_t nsize);
@@ -123,6 +127,7 @@ private:
     DevicePropertyTable *device_property_table_;
     MqttClient *mqtt_client_;
     RuleTable *rule_table_;
+    OpenClawClient *open_claw_client_;
 };
 
 }  // namespace cortexlink

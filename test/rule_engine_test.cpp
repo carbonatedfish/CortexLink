@@ -34,6 +34,7 @@
 #include "lua/lua_sandbox.h"
 #include "mqtt/mqtt_client.h"
 #include "rule_engine/cond_parser.h"
+#include "llm/open_claw_client.h"
 #include "rule_engine/rule_engine.h"
 #include "util/log_util.h"
 #include "util/uuid_util.h"
@@ -653,7 +654,8 @@ static void TestCase7_GetData(MqttClient &mqtt) {
     DevicePropertyTable dev_prop;
     RuleTable rule_tbl;
 
-    LuaSandbox sandbox(&dev_data, &dev_prop, &mqtt, &rule_tbl);
+    OpenClawClient open_claw;
+    LuaSandbox sandbox(&dev_data, &dev_prop, &mqtt, &rule_tbl, &open_claw);
 
     // Script that reads temperature data and logs it
     // If get_data returns nil, we convert to "nil" string — script still
@@ -682,7 +684,8 @@ static void TestCase8_DoAction(MqttClient &mqtt) {
     DevicePropertyTable dev_prop;
     RuleTable rule_tbl;
 
-    LuaSandbox sandbox(&dev_data, &dev_prop, &mqtt, &rule_tbl);
+    OpenClawClient open_claw;
+    LuaSandbox sandbox(&dev_data, &dev_prop, &mqtt, &rule_tbl, &open_claw);
 
     // Script that turns on the fan — device fan_001 is online
     std::string script = R"lua(
@@ -713,7 +716,8 @@ static void TestCase9_Publish(MqttClient &mqtt) {
     DevicePropertyTable dev_prop;
     RuleTable rule_tbl;
 
-    LuaSandbox sandbox(&dev_data, &dev_prop, &mqtt, &rule_tbl);
+    OpenClawClient open_claw;
+    LuaSandbox sandbox(&dev_data, &dev_prop, &mqtt, &rule_tbl, &open_claw);
 
     std::string script = R"lua(
 local ok, err = publish("test/channel", "hello_from_test")
@@ -740,7 +744,8 @@ static void TestCase10_Timeout(MqttClient &mqtt) {
     DevicePropertyTable dev_prop;
     RuleTable rule_tbl;
 
-    LuaSandbox sandbox(&dev_data, &dev_prop, &mqtt, &rule_tbl);
+    OpenClawClient open_claw;
+    LuaSandbox sandbox(&dev_data, &dev_prop, &mqtt, &rule_tbl, &open_claw);
 
     // infinite loop — will time out twice
     std::string script = "while true do end";
@@ -971,7 +976,8 @@ int main() {
     std::cout << "  DeviceManager started." << std::endl;
 
     // 7. RuleEngine
-    RuleEngine rule_engine(&mqtt, &dev_mgr);
+    OpenClawClient open_claw;
+    RuleEngine rule_engine(&mqtt, &dev_mgr, &open_claw);
     if (!rule_engine.Start()) {
         std::cerr << "FATAL: Failed to start RuleEngine" << std::endl;
         dev_mgr.Stop();

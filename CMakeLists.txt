@@ -92,6 +92,7 @@ add_executable(CortexLinkTest
     ${CortexLink_RULE_ENGINE_SRC}
     ${CortexLink_DEVICE_SRC}
     ${CortexLink_LUA_SRC}
+    src/llm/open_claw_client.cpp
 )
 target_include_directories(CortexLinkTest PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR} ${LUA_INCLUDE_DIRS})
 target_link_libraries(CortexLinkTest PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3 ${LUA_LIBRARIES} ${CRYPTO_LIB})

@@ -24,6 +24,7 @@ namespace cortexlink {
 
 // Forward declaration
 class DeviceManager;
+class OpenClawClient;
 
 // RuleEngine is the central orchestrator that bridges the condition parser
 // and the Lua sandbox. It subscribes to MQTT device-event topics, looks up
@@ -35,7 +36,9 @@ class DeviceManager;
 // take several seconds with retries) never blocks the MQTT loop.
 class RuleEngine {
 public:
-    RuleEngine(MqttClient *mqtt_client, DeviceManager *device_manager);
+    RuleEngine(MqttClient *mqtt_client,
+               DeviceManager *device_manager,
+               OpenClawClient *open_claw_client);
     ~RuleEngine();
 
     RuleEngine(const RuleEngine &) = delete;
@@ -113,6 +116,7 @@ private:
 
     MqttClient *mqtt_client_;
     DeviceManager *device_manager_;
+    OpenClawClient *open_claw_client_;
 
     // ---- Lua sandbox ----------------------------------------------------
 

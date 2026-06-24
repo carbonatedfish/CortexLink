@@ -19,6 +19,7 @@ extern "C" {
 #include "db/device_data_table.h"
 #include "db/device_property_table.h"
 #include "db/rule_table.h"
+#include "llm/open_claw_client.h"
 #include "mqtt/mqtt_client.h"
 #include "util/uuid_util.h"
 
@@ -31,11 +32,13 @@ namespace cortexlink {
 LuaSandbox::LuaSandbox(DeviceDataTable *device_data_table,
                        DevicePropertyTable *device_property_table,
                        MqttClient *mqtt_client,
-                       RuleTable *rule_table)
+                       RuleTable *rule_table,
+                       OpenClawClient *open_claw_client)
     : device_data_table_(device_data_table)
     , device_property_table_(device_property_table)
     , mqtt_client_(mqtt_client)
     , rule_table_(rule_table)
+    , open_claw_client_(open_claw_client)
 {
 }
 
@@ -391,6 +394,41 @@ int LuaSandbox::GetDeviceStateFn(lua_State *L)
 }
 
 // ===========================================================================
+// Host API: request_rule(prompt, session) → true | false, err_msg
+// ===========================================================================
+
+int LuaSandbox::RequestRuleFn(lua_State *L)
+{
+    auto *self = static_cast<LuaSandbox *>(lua_touserdata(L, lua_upvalueindex(1)));
+
+    const char *prompt = luaL_checkstring(L, 1);
+
+    // session is optional (nil or string) — defaults to empty string.
+    const char *session = luaL_optstring(L, 2, "");
+
+    if (!self->open_claw_client_) {
+        spdlog::error("LuaSandbox: request_rule — OpenClawClient is null");
+        lua_pushboolean(L, false);
+        lua_pushstring(L, "OpenClaw client not initialized");
+        return 2;
+    }
+
+    if (!self->open_claw_client_->SendMessage(session, prompt)) {
+        spdlog::warn("LuaSandbox: request_rule failed — session='{}' prompt_len={}",
+                     session, std::strlen(prompt));
+        lua_pushboolean(L, false);
+        lua_pushstring(L, "OpenClaw request failed");
+        return 2;
+    }
+
+    spdlog::debug("LuaSandbox: request_rule sent — session='{}' prompt_len={}",
+                  session, std::strlen(prompt));
+
+    lua_pushboolean(L, true);
+    return 1;
+}
+
+// ===========================================================================
 // State Creation
 // ===========================================================================
 
@@ -455,6 +493,10 @@ void LuaSandbox::RegisterHostApi(lua_State *L)
     lua_pushlightuserdata(L, this);
     lua_pushcclosure(L, GetDeviceStateFn, 1);
     lua_setglobal(L, "get_device_state");
+
+    lua_pushlightuserdata(L, this);
+    lua_pushcclosure(L, RequestRuleFn, 1);
+    lua_setglobal(L, "request_rule");
 }
 
 // ===========================================================================

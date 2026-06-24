@@ -9,6 +9,7 @@
 #include <spdlog/spdlog.h>
 
 #include "device/device_manager.h"
+#include "llm/open_claw_client.h"
 #include "rule_engine/cond_parser.h"
 #include "util/uuid_util.h"
 
@@ -20,11 +21,14 @@ using json = nlohmann::json;
 // Constructor / Destructor
 // ===========================================================================
 
-RuleEngine::RuleEngine(MqttClient *mqtt_client, DeviceManager *device_manager)
+RuleEngine::RuleEngine(MqttClient *mqtt_client,
+                       DeviceManager *device_manager,
+                       OpenClawClient *open_claw_client)
     : mqtt_client_(mqtt_client)
     , device_manager_(device_manager)
+    , open_claw_client_(open_claw_client)
     , lua_sandbox_(&device_data_table_, &device_property_table_,
-                   mqtt_client_, &rule_table_)
+                   mqtt_client_, &rule_table_, open_claw_client_)
 {
     // Resolve the script directory: ~/.cortexlink/scripts/
     const char *home = std::getenv("HOME");

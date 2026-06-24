@@ -10,6 +10,7 @@
 #include "app/app_sql_proxy.h"
 #include "db/db_table.h"
 #include "llm/llm_sql_proxy.h"
+#include "llm/open_claw_client.h"
 #include "db/device_data_table.h"
 #include "db/device_property_table.h"
 #include "db/event_record_table.h"
@@ -111,8 +112,11 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // 9. Create and start the RuleEngine.
-    RuleEngine rule_engine(&mqtt, &dev_mgr);
+    // 9. Create OpenClawClient for LLM-based rule generation.
+    OpenClawClient open_claw_client;
+
+    // 10. Create and start the RuleEngine.
+    RuleEngine rule_engine(&mqtt, &dev_mgr, &open_claw_client);
     if (!rule_engine.Start()) {
         spdlog::error("Failed to start RuleEngine");
         dev_mgr.Stop();
@@ -122,7 +126,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // 10. Create and start the AppManager (file transfer).
+    // 11. Create and start the AppManager (file transfer).
     AppFileTransManager app_mgr(&mqtt);
     if (!app_mgr.Start()) {
         spdlog::error("Failed to start AppManager");
@@ -134,7 +138,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // 11. Create and start the AppSqlProxy.
+    // 12. Create and start the AppSqlProxy.
     AppSqlProxy sql_proxy(&mqtt);
     if (!sql_proxy.Start()) {
         spdlog::error("Failed to start AppSqlProxy");
@@ -147,7 +151,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // 12. Create and start the LlmSqlProxy (Unix domain socket for LLM).
+    // 13. Create and start the LlmSqlProxy (Unix domain socket for LLM).
     LlmSqlProxy llm_sql_proxy;
     if (!llm_sql_proxy.Start()) {
         spdlog::error("Failed to start LlmSqlProxy");
@@ -163,12 +167,12 @@ int main(int argc, char **argv)
 
     spdlog::info("CortexLink startup complete — waiting for events");
 
-    // 13. Main loop — wait for shutdown signal.
+    // 14. Main loop — wait for shutdown signal.
     while (!g_shutdown) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
-    // 14. Graceful shutdown (reverse order of startup).
+    // 15. Graceful shutdown (reverse order of startup).
     spdlog::info("=== CortexLink shutting down ===");
 
     llm_sql_proxy.Stop();
