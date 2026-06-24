@@ -12,6 +12,7 @@
 #include <unordered_map>
 
 #include "db/device_property_table.h"
+#include "device/device_resp_code.h"
 #include "mqtt/mqtt_client.h"
 
 namespace cortexlink {
@@ -51,6 +52,13 @@ public:
 
     // Fire-and-forget publish to any topic. A msg_id is auto-injected.
     bool Send(const std::string &topic, const std::string &payload);
+
+    // Send a reply on device/<uuid>/resp/m2s.
+    // Pass the request's msg_id when replying to a specific request;
+    // pass an empty string for unsolicited notifications (e.g. broadcast/online).
+    void SendM2sReply(const std::string &dev_uuid,
+                      const std::string &msg_id,
+                      DeviceRespCode resp_code);
 
     // ---- diagnostics -----------------------------------------------------
 

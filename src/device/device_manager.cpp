@@ -205,6 +205,25 @@ bool DeviceManager::Send(const std::string &topic, const std::string &payload)
     return mqtt_client_->PublishMessage(topic, msg.dump());
 }
 
+void DeviceManager::SendM2sReply(const std::string &dev_uuid,
+                                  const std::string &msg_id,
+                                  DeviceRespCode resp_code)
+{
+    nlohmann::json reply;
+    reply["msg_id"] = msg_id;
+    reply["resp"] = static_cast<int>(resp_code);
+
+    std::string topic = "device/" + dev_uuid + "/resp/m2s";
+    if (!mqtt_client_->PublishMessage(topic, reply.dump(), /*qos=*/1)) {
+        spdlog::error("DeviceManager: failed to send m2s reply to {} (resp={})",
+                      dev_uuid, static_cast<int>(resp_code));
+        return;
+    }
+
+    spdlog::debug("DeviceManager: sent m2s reply resp={} to device {}",
+                  static_cast<int>(resp_code), dev_uuid);
+}
+
 // ===========================================================================
 // Diagnostics
 // ===========================================================================
@@ -296,8 +315,10 @@ void DeviceManager::OnBroadcastOnline(const std::string & /*topic*/,
 
     if (device_table_.Upsert(dev)) {
         spdlog::info("DeviceManager: device online — {} ({})", dev_id_str, dev.dev_name);
+        SendM2sReply(dev_id_str, "", DeviceRespCode::OK);
     } else {
         spdlog::error("DeviceManager: failed to upsert device {}", dev_id_str);
+        SendM2sReply(dev_id_str, "", DeviceRespCode::INTERNAL_ERROR);
         return;
     }
 
