@@ -18,7 +18,7 @@ public:
         int64_t count = 0;
         int64_t limit = 0;         // 0 = unlimited
         std::string cond_expr;     // condition expression (may be empty)
-        std::string action;        // Lua script text
+        std::string action;        // Lua script file name
     };
 
     bool CreateTable() override;
