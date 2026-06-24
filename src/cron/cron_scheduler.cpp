@@ -278,24 +278,27 @@ std::optional<std::string> GetParamValue(const json &params_array,
 {
     if (!params_array.is_array()) return std::nullopt;
     for (const auto &item : params_array) {
-        if (item.contains("p_name") && item["p_name"].is_string()
-            && item["p_name"].get<std::string>() == p_name) {
-            if (item.contains("value")) {
-                if (item["value"].is_string()) {
-                    return item["value"].get<std::string>();
-                }
-                // numbers → string
-                if (item["value"].is_number()) {
-                    if (item["value"].is_number_float()) {
-                        return std::to_string(item["value"].get<double>());
-                    }
-                    return std::to_string(item["value"].get<int64_t>());
-                }
-                // fallback: dump whatever it is
-                return item["value"].dump();
-            }
-            return std::nullopt;
+        if (!item.contains("p_name") || 
+            !item["p_name"].is_string() ||
+            item["p_name"].get<std::string>() != p_name) {
+            continue;
         }
+            
+        if (!item.contains("value"))
+            return std::nullopt;
+
+        if (item["value"].is_string()) {
+            return item["value"].get<std::string>();
+        }
+        // numbers → string
+        if (item["value"].is_number()) {
+            if (item["value"].is_number_float()) {
+                return std::to_string(item["value"].get<double>());
+            }
+            return std::to_string(item["value"].get<int64_t>());
+        }
+        // fallback: dump whatever it is
+        return item["value"].dump();
     }
     return std::nullopt;
 }
