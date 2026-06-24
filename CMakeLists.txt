@@ -82,3 +82,16 @@ add_executable(CortexLink
 )
 target_include_directories(CortexLink PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR} ${LUA_INCLUDE_DIRS})
 target_link_libraries(CortexLink PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3 ${LUA_LIBRARIES} ${CRYPTO_LIB})
+
+# --- Test executable ---
+add_executable(CortexLinkTest
+    test/rule_engine_test.cpp
+    ${CortexLink_MQTT_SRC}
+    ${CortexLink_UTIL_SRC}
+    ${CortexLink_DB_SRC}
+    ${CortexLink_RULE_ENGINE_SRC}
+    ${CortexLink_DEVICE_SRC}
+    ${CortexLink_LUA_SRC}
+)
+target_include_directories(CortexLinkTest PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR} ${LUA_INCLUDE_DIRS})
+target_link_libraries(CortexLinkTest PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3 ${LUA_LIBRARIES} ${CRYPTO_LIB})
