@@ -157,6 +157,20 @@ LlmCmdRouter::LlmCmdRouter()
              std::make_unique<LlmDeleteRuleStrategy>());
     Register("set_rule_enable",
              std::make_unique<LlmSetRuleEnableStrategy>());
+    Register("get_event_rules",
+             std::make_unique<LlmGetEventRulesStrategy>());
+    Register("get_event_rules_by_event",
+             std::make_unique<LlmGetEventRulesByEventStrategy>());
+    Register("get_event_rules_by_rule",
+             std::make_unique<LlmGetEventRulesByRuleStrategy>());
+    Register("insert_event_rule",
+             std::make_unique<LlmInsertEventRuleStrategy>());
+    Register("delete_event_rule",
+             std::make_unique<LlmDeleteEventRuleStrategy>());
+    Register("delete_event_rules_by_event",
+             std::make_unique<LlmDeleteEventRulesByEventStrategy>());
+    Register("delete_event_rules_by_rule",
+             std::make_unique<LlmDeleteEventRulesByRuleStrategy>());
 }
 
 LlmSqlStrategy *LlmCmdRouter::Lookup(const std::string &cmd) const
@@ -539,6 +553,182 @@ bool LlmSetRuleEnableStrategy::BindParams(sqlite3_stmt *stmt,
 }
 
 bool LlmSetRuleEnableStrategy::IsWrite() const
+{
+    return true;
+}
+
+// ============================================================================
+// LlmGetEventRulesStrategy
+// ============================================================================
+
+std::string LlmGetEventRulesStrategy::GetSql(
+    const nlohmann::json & /*params*/) const
+{
+    return "SELECT * FROM event_rule";
+}
+
+bool LlmGetEventRulesStrategy::BindParams(
+    sqlite3_stmt * /*stmt*/, const nlohmann::json & /*params*/) const
+{
+    return true;
+}
+
+// ============================================================================
+// LlmGetEventRulesByEventStrategy
+// ============================================================================
+
+std::string LlmGetEventRulesByEventStrategy::GetSql(
+    const nlohmann::json & /*params*/) const
+{
+    return "SELECT * FROM event_rule WHERE evt_id = ?";
+}
+
+bool LlmGetEventRulesByEventStrategy::ValidateParams(
+    const nlohmann::json &params) const
+{
+    return params.contains("evt_id") && params["evt_id"].is_string() &&
+           !params["evt_id"].get<std::string>().empty();
+}
+
+bool LlmGetEventRulesByEventStrategy::BindParams(
+    sqlite3_stmt *stmt, const nlohmann::json &params) const
+{
+    return BindUuidParam(stmt, 1, params, "evt_id");
+}
+
+// ============================================================================
+// LlmGetEventRulesByRuleStrategy
+// ============================================================================
+
+std::string LlmGetEventRulesByRuleStrategy::GetSql(
+    const nlohmann::json & /*params*/) const
+{
+    return "SELECT * FROM event_rule WHERE rule_id = ?";
+}
+
+bool LlmGetEventRulesByRuleStrategy::ValidateParams(
+    const nlohmann::json &params) const
+{
+    return params.contains("rule_id");
+}
+
+bool LlmGetEventRulesByRuleStrategy::BindParams(
+    sqlite3_stmt *stmt, const nlohmann::json &params) const
+{
+    return BindIntParam(stmt, 1, params, "rule_id");
+}
+
+// ============================================================================
+// LlmInsertEventRuleStrategy
+// ============================================================================
+
+std::string LlmInsertEventRuleStrategy::GetSql(
+    const nlohmann::json & /*params*/) const
+{
+    return "INSERT OR IGNORE INTO event_rule (evt_id, rule_id) VALUES (?, ?)";
+}
+
+bool LlmInsertEventRuleStrategy::ValidateParams(
+    const nlohmann::json &params) const
+{
+    return params.contains("evt_id") && params["evt_id"].is_string() &&
+           !params["evt_id"].get<std::string>().empty() &&
+           params.contains("rule_id");
+}
+
+bool LlmInsertEventRuleStrategy::BindParams(
+    sqlite3_stmt *stmt, const nlohmann::json &params) const
+{
+    if (!BindUuidParam(stmt, 1, params, "evt_id")) return false;
+    return BindIntParam(stmt, 2, params, "rule_id");
+}
+
+bool LlmInsertEventRuleStrategy::IsWrite() const
+{
+    return true;
+}
+
+// ============================================================================
+// LlmDeleteEventRuleStrategy
+// ============================================================================
+
+std::string LlmDeleteEventRuleStrategy::GetSql(
+    const nlohmann::json & /*params*/) const
+{
+    return "DELETE FROM event_rule WHERE evt_id = ? AND rule_id = ?";
+}
+
+bool LlmDeleteEventRuleStrategy::ValidateParams(
+    const nlohmann::json &params) const
+{
+    return params.contains("evt_id") && params["evt_id"].is_string() &&
+           !params["evt_id"].get<std::string>().empty() &&
+           params.contains("rule_id");
+}
+
+bool LlmDeleteEventRuleStrategy::BindParams(
+    sqlite3_stmt *stmt, const nlohmann::json &params) const
+{
+    if (!BindUuidParam(stmt, 1, params, "evt_id")) return false;
+    return BindIntParam(stmt, 2, params, "rule_id");
+}
+
+bool LlmDeleteEventRuleStrategy::IsWrite() const
+{
+    return true;
+}
+
+// ============================================================================
+// LlmDeleteEventRulesByEventStrategy
+// ============================================================================
+
+std::string LlmDeleteEventRulesByEventStrategy::GetSql(
+    const nlohmann::json & /*params*/) const
+{
+    return "DELETE FROM event_rule WHERE evt_id = ?";
+}
+
+bool LlmDeleteEventRulesByEventStrategy::ValidateParams(
+    const nlohmann::json &params) const
+{
+    return params.contains("evt_id") && params["evt_id"].is_string() &&
+           !params["evt_id"].get<std::string>().empty();
+}
+
+bool LlmDeleteEventRulesByEventStrategy::BindParams(
+    sqlite3_stmt *stmt, const nlohmann::json &params) const
+{
+    return BindUuidParam(stmt, 1, params, "evt_id");
+}
+
+bool LlmDeleteEventRulesByEventStrategy::IsWrite() const
+{
+    return true;
+}
+
+// ============================================================================
+// LlmDeleteEventRulesByRuleStrategy
+// ============================================================================
+
+std::string LlmDeleteEventRulesByRuleStrategy::GetSql(
+    const nlohmann::json & /*params*/) const
+{
+    return "DELETE FROM event_rule WHERE rule_id = ?";
+}
+
+bool LlmDeleteEventRulesByRuleStrategy::ValidateParams(
+    const nlohmann::json &params) const
+{
+    return params.contains("rule_id");
+}
+
+bool LlmDeleteEventRulesByRuleStrategy::BindParams(
+    sqlite3_stmt *stmt, const nlohmann::json &params) const
+{
+    return BindIntParam(stmt, 1, params, "rule_id");
+}
+
+bool LlmDeleteEventRulesByRuleStrategy::IsWrite() const
 {
     return true;
 }

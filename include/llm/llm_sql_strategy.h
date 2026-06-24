@@ -176,6 +176,67 @@ public:
     bool IsWrite() const override;
 };
 
+// ---- event_rule strategies ------------------------------------------------
+
+// cmd: get_event_rules
+class LlmGetEventRulesStrategy : public LlmSqlStrategy {
+public:
+    std::string GetSql(const nlohmann::json &) const override;
+    bool BindParams(sqlite3_stmt *, const nlohmann::json &) const override;
+};
+
+// cmd: get_event_rules_by_event
+class LlmGetEventRulesByEventStrategy : public LlmSqlStrategy {
+public:
+    std::string GetSql(const nlohmann::json &) const override;
+    bool ValidateParams(const nlohmann::json &params) const override;
+    bool BindParams(sqlite3_stmt *, const nlohmann::json &) const override;
+};
+
+// cmd: get_event_rules_by_rule
+class LlmGetEventRulesByRuleStrategy : public LlmSqlStrategy {
+public:
+    std::string GetSql(const nlohmann::json &) const override;
+    bool ValidateParams(const nlohmann::json &params) const override;
+    bool BindParams(sqlite3_stmt *, const nlohmann::json &) const override;
+};
+
+// cmd: insert_event_rule
+class LlmInsertEventRuleStrategy : public LlmSqlStrategy {
+public:
+    std::string GetSql(const nlohmann::json &) const override;
+    bool ValidateParams(const nlohmann::json &params) const override;
+    bool BindParams(sqlite3_stmt *, const nlohmann::json &) const override;
+    bool IsWrite() const override;
+};
+
+// cmd: delete_event_rule
+class LlmDeleteEventRuleStrategy : public LlmSqlStrategy {
+public:
+    std::string GetSql(const nlohmann::json &) const override;
+    bool ValidateParams(const nlohmann::json &params) const override;
+    bool BindParams(sqlite3_stmt *, const nlohmann::json &) const override;
+    bool IsWrite() const override;
+};
+
+// cmd: delete_event_rules_by_event
+class LlmDeleteEventRulesByEventStrategy : public LlmSqlStrategy {
+public:
+    std::string GetSql(const nlohmann::json &) const override;
+    bool ValidateParams(const nlohmann::json &params) const override;
+    bool BindParams(sqlite3_stmt *, const nlohmann::json &) const override;
+    bool IsWrite() const override;
+};
+
+// cmd: delete_event_rules_by_rule
+class LlmDeleteEventRulesByRuleStrategy : public LlmSqlStrategy {
+public:
+    std::string GetSql(const nlohmann::json &) const override;
+    bool ValidateParams(const nlohmann::json &params) const override;
+    bool BindParams(sqlite3_stmt *, const nlohmann::json &) const override;
+    bool IsWrite() const override;
+};
+
 // ============================================================================
 // LlmCmdRouter — maps cmd strings to LlmSqlStrategy instances
 // ============================================================================
