@@ -208,6 +208,52 @@ nlohmann::json LuaTableToJson(lua_State *L, int idx)
     return result;
 }
 
+// Convert a Lua table {key = value, ...} to the standard params array format:
+//   [{"p_name": "key", "value": "string_value"}, ...]
+// All values are converted to strings. Nested tables are JSON-stringified.
+nlohmann::json LuaTableToParamsArray(lua_State *L, int idx)
+{
+    idx = lua_absindex(L, idx);
+    nlohmann::json result = nlohmann::json::array();
+
+    lua_pushnil(L);
+    while (lua_next(L, idx) != 0) {
+        // key at -2, value at -1
+        std::string key;
+        if (lua_isstring(L, -2)) {
+            key = lua_tostring(L, -2);
+        } else if (lua_isinteger(L, -2)) {
+            key = std::to_string(lua_tointeger(L, -2));
+        } else {
+            lua_pop(L, 1);
+            continue;
+        }
+
+        std::string val_str;
+        if (lua_isinteger(L, -1)) {
+            val_str = std::to_string(lua_tointeger(L, -1));
+        } else if (lua_isnumber(L, -1)) {
+            val_str = std::to_string(lua_tonumber(L, -1));
+        } else if (lua_isstring(L, -1)) {
+            val_str = lua_tostring(L, -1);
+        } else if (lua_isboolean(L, -1)) {
+            val_str = lua_toboolean(L, -1) ? "true" : "false";
+        } else if (lua_istable(L, -1)) {
+            nlohmann::json nested = LuaTableToJson(L, lua_gettop(L));
+            val_str = nested.dump();
+        } else {
+            val_str = luaL_tolstring(L, -1, nullptr);
+            lua_pop(L, 1);
+        }
+
+        result.push_back({{"p_name", key}, {"value", val_str}});
+
+        lua_pop(L, 1);  // pop value
+    }
+
+    return result;
+}
+
 }  // anonymous namespace
 
 // ===========================================================================
@@ -282,7 +328,7 @@ int LuaSandbox::DoActionFn(lua_State *L)
     nlohmann::json payload;
     payload["msg_id"] = util::GenerateUuid();
     payload["act_id"] = action_id;
-    payload["params"] = LuaTableToJson(L, 3);
+    payload["params"] = LuaTableToParamsArray(L, 3);
 
     // Publish to device/{uuid}/action/{action_id}
     std::string topic = "device/" + std::string(dev_uuid_str)

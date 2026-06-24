@@ -8,6 +8,7 @@
 
 #include "app/app_manager.h"
 #include "app/app_sql_proxy.h"
+#include "cron/cron_scheduler.h"
 #include "db/db_table.h"
 #include "llm/llm_sql_proxy.h"
 #include "llm/open_claw_client.h"
@@ -165,15 +166,32 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    // 14. Create and start the CronScheduler.
+    CronScheduler cron_scheduler(&mqtt, &rule_engine);
+    if (!cron_scheduler.Start()) {
+        spdlog::error("Failed to start CronScheduler");
+        llm_sql_proxy.Stop();
+        sql_proxy.Stop();
+        app_mgr.Stop();
+        rule_engine.Stop();
+        dev_mgr.Stop();
+        mqtt.LoopStop();
+        mqtt.Disconnect();
+        DBTable::Shutdown();
+        return 1;
+    }
+
     spdlog::info("CortexLink startup complete — waiting for events");
 
-    // 14. Main loop — wait for shutdown signal.
+    // 15. Main loop — wait for shutdown signal.
     while (!g_shutdown) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
-    // 15. Graceful shutdown (reverse order of startup).
+    // 16. Graceful shutdown (reverse order of startup).
     spdlog::info("=== CortexLink shutting down ===");
+
+    cron_scheduler.Stop();
 
     llm_sql_proxy.Stop();
     sql_proxy.Stop();

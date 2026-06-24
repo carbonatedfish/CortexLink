@@ -42,6 +42,27 @@ bool EventTable::Insert(const Event &evt)
     return ExecuteWrite(sql, bind);
 }
 
+bool EventTable::Upsert(const Event &evt)
+{
+    const char *sql = R"SQL(
+        INSERT OR REPLACE INTO event (evt_id, dev_id, evt_name, "desc", params)
+        VALUES (?, ?, ?, ?, ?);
+    )SQL";
+
+    auto bind = [&evt](sqlite3_stmt *stmt) -> int {
+        sqlite3_bind_blob(stmt, 1, evt.evt_id.data(),
+                          static_cast<int>(evt.evt_id.size()), SQLITE_STATIC);
+        sqlite3_bind_blob(stmt, 2, evt.dev_id.data(),
+                          static_cast<int>(evt.dev_id.size()), SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, evt.evt_name.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, evt.desc.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 5, evt.params.c_str(), -1, SQLITE_STATIC);
+        return SQLITE_OK;
+    };
+
+    return ExecuteWrite(sql, bind);
+}
+
 bool EventTable::Delete(const std::array<uint8_t, 16> &evt_id)
 {
     const char *sql = "DELETE FROM event WHERE evt_id=?;";

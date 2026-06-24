@@ -21,6 +21,10 @@ public:
     bool CreateTable() override;
 
     bool Insert(const Event &evt);
+
+    // Insert or replace an event definition (INSERT OR REPLACE).
+    bool Upsert(const Event &evt);
+
     bool Delete(const std::array<uint8_t, 16> &evt_id);
 
     std::optional<Event> GetByEvtId(const std::array<uint8_t, 16> &evt_id);
