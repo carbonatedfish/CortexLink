@@ -128,7 +128,7 @@ int main(int argc, char **argv)
     }
 
     // 11. Create and start the AppManager (file transfer).
-    AppFileTransManager app_mgr(&mqtt);
+    AppManager app_mgr(&mqtt);
     if (!app_mgr.Start()) {
         spdlog::error("Failed to start AppManager");
         rule_engine.Stop();

@@ -10,13 +10,15 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include "util/uuid_util.h"
+
 namespace cortexlink {
 
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
 
-AppFileTransManager::AppFileTransManager(MqttClient *client)
+AppManager::AppManager(MqttClient *client)
     : mqtt_client_(client)
 {
     using namespace std::placeholders;
@@ -32,9 +34,17 @@ AppFileTransManager::AppFileTransManager(MqttClient *client)
         [this](const std::string &topic, const std::string &payload) {
             OnVoiceUpload(topic, payload);
         });
+
+    llm_trans_sub_ = std::make_unique<MqttSubscription>(
+        "app/llm/trans", 1,
+        [this](const std::string &topic, const std::string &payload) {
+            OnLlmRequest(topic, payload);
+        });
+
+    open_claw_client_ = std::make_unique<OpenClawClient>();
 }
 
-AppFileTransManager::~AppFileTransManager()
+AppManager::~AppManager()
 {
     Stop();
 }
@@ -43,7 +53,7 @@ AppFileTransManager::~AppFileTransManager()
 // Lifecycle
 // ============================================================================
 
-bool AppFileTransManager::Start()
+bool AppManager::Start()
 {
     if (running_) {
         spdlog::warn("AppManager::Start called while already running");
@@ -61,23 +71,38 @@ bool AppFileTransManager::Start()
         return false;
     }
 
+    if (!mqtt_client_->Subscribe(llm_trans_sub_.get())) {
+        spdlog::error("AppManager: failed to subscribe to app/llm/trans");
+        mqtt_client_->Unsubscribe(voice_trans_sub_.get());
+        mqtt_client_->Unsubscribe(face_trans_sub_.get());
+        return false;
+    }
+
     running_ = true;
-    cleanup_thread_ = std::thread(&AppFileTransManager::CleanupLoop, this);
+    cleanup_thread_ = std::thread(&AppManager::CleanupLoop, this);
+    llm_worker_thread_ = std::thread(&AppManager::LlmWorkerLoop, this);
 
     spdlog::info("AppManager started");
     return true;
 }
 
-void AppFileTransManager::Stop()
+void AppManager::Stop()
 {
     if (!running_) return;
 
     running_ = false;
 
+    llm_queue_cv_.notify_all();
+
+    if (llm_worker_thread_.joinable()) {
+        llm_worker_thread_.join();
+    }
+
     if (cleanup_thread_.joinable()) {
         cleanup_thread_.join();
     }
 
+    mqtt_client_->Unsubscribe(llm_trans_sub_.get());
     mqtt_client_->Unsubscribe(voice_trans_sub_.get());
     mqtt_client_->Unsubscribe(face_trans_sub_.get());
 
@@ -93,23 +118,62 @@ void AppFileTransManager::Stop()
 // MQTT Callbacks
 // ============================================================================
 
-void AppFileTransManager::OnFaceUpload(const std::string & /*topic*/,
+void AppManager::OnFaceUpload(const std::string & /*topic*/,
                               const std::string &payload)
 {
     HandleFragment(payload, FileType::kFace);
 }
 
-void AppFileTransManager::OnVoiceUpload(const std::string & /*topic*/,
+void AppManager::OnVoiceUpload(const std::string & /*topic*/,
                                const std::string &payload)
 {
     HandleFragment(payload, FileType::kVoice);
+}
+
+void AppManager::OnLlmRequest(const std::string & /*topic*/,
+                               const std::string &payload)
+{
+    // 1. Parse JSON
+    nlohmann::json j;
+    try {
+        j = nlohmann::json::parse(payload);
+    } catch (const nlohmann::json::parse_error &e) {
+        spdlog::warn("AppManager: LLM request JSON parse error: {}", e.what());
+        SendLlmResponse("", 1);
+        return;
+    }
+
+    // 2. Validate required fields
+    std::string msg_id = j.value("msg_id", "");
+    std::string prompt = j.value("prompt", "");
+
+    if (msg_id.empty() || prompt.empty()) {
+        spdlog::warn("AppManager: LLM request missing msg_id or prompt");
+        SendLlmResponse(msg_id, 2);
+        return;
+    }
+
+    // 3. Enqueue for background processing
+    LlmTask task;
+    task.msg_id = msg_id;
+    task.prompt = prompt;
+    task.timestamp = j.value("timestamp", "");
+
+    {
+        std::lock_guard<std::mutex> lock(llm_queue_mutex_);
+        llm_queue_.push(std::move(task));
+    }
+    llm_queue_cv_.notify_one();
+
+    spdlog::info("AppManager: LLM request enqueued (msg_id={}, prompt_len={})",
+                 msg_id, prompt.size());
 }
 
 // ============================================================================
 // Core Logic
 // ============================================================================
 
-void AppFileTransManager::HandleFragment(const std::string &payload, FileType type)
+void AppManager::HandleFragment(const std::string &payload, FileType type)
 {
     // 1. Parse JSON
     nlohmann::json j;
@@ -229,7 +293,7 @@ void AppFileTransManager::HandleFragment(const std::string &payload, FileType ty
     }
 }
 
-void AppFileTransManager::TryComplete(const std::string &key, FileType type,
+void AppManager::TryComplete(const std::string &key, FileType type,
                              FileTransferState state)
 {
     std::string resp_topic = MakeRespTopic(type);
@@ -300,7 +364,7 @@ void AppFileTransManager::TryComplete(const std::string &key, FileType type,
 // Helpers
 // ============================================================================
 
-std::string AppFileTransManager::MakeTransferKey(const std::string &file_name,
+std::string AppManager::MakeTransferKey(const std::string &file_name,
                                         FileType type)
 {
     switch (type) {
@@ -312,7 +376,7 @@ std::string AppFileTransManager::MakeTransferKey(const std::string &file_name,
     return "?:" + file_name;
 }
 
-std::string AppFileTransManager::MakeRespTopic(FileType type)
+std::string AppManager::MakeRespTopic(FileType type)
 {
     switch (type) {
     case FileType::kFace:
@@ -323,7 +387,7 @@ std::string AppFileTransManager::MakeRespTopic(FileType type)
     return "app/?/resp";
 }
 
-std::string AppFileTransManager::SanitizeFileName(const std::string &file_name)
+std::string AppManager::SanitizeFileName(const std::string &file_name)
 {
     // Extract basename: everything after the last '/' or '\'
     auto pos = file_name.find_last_of("/\\");
@@ -342,7 +406,7 @@ std::string AppFileTransManager::SanitizeFileName(const std::string &file_name)
     return base;
 }
 
-std::string AppFileTransManager::MakeFileDir(FileType type) const
+std::string AppManager::MakeFileDir(FileType type) const
 {
     const char *home = std::getenv("HOME");
     std::string prefix = home ? std::string(home) + "/.cortexlink" : ".cortexlink";
@@ -356,7 +420,7 @@ std::string AppFileTransManager::MakeFileDir(FileType type) const
     return prefix + "/unknown/";
 }
 
-void AppFileTransManager::SendAck(const std::string &resp_topic, int frag_id,
+void AppManager::SendAck(const std::string &resp_topic, int frag_id,
                          const std::string &status)
 {
     nlohmann::json resp;
@@ -365,7 +429,7 @@ void AppFileTransManager::SendAck(const std::string &resp_topic, int frag_id,
     mqtt_client_->PublishMessage(resp_topic, resp.dump(), 1);
 }
 
-int AppFileTransManager::ParseJsonInt(const nlohmann::json &j, const std::string &key,
+int AppManager::ParseJsonInt(const nlohmann::json &j, const std::string &key,
                              int default_val)
 {
     if (!j.contains(key)) return default_val;
@@ -388,7 +452,7 @@ int AppFileTransManager::ParseJsonInt(const nlohmann::json &j, const std::string
 // Cryptographic Helpers
 // ============================================================================
 
-std::string AppFileTransManager::Sha256Hex(const std::vector<uint8_t> &data)
+std::string AppManager::Sha256Hex(const std::vector<uint8_t> &data)
 {
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     if (!ctx) {
@@ -427,7 +491,7 @@ std::string AppFileTransManager::Sha256Hex(const std::vector<uint8_t> &data)
     return result;
 }
 
-std::vector<uint8_t> AppFileTransManager::Base64Decode(const std::string &encoded)
+std::vector<uint8_t> AppManager::Base64Decode(const std::string &encoded)
 {
     if (encoded.empty()) return {};
 
@@ -467,7 +531,7 @@ std::vector<uint8_t> AppFileTransManager::Base64Decode(const std::string &encode
 // Cleanup Thread
 // ============================================================================
 
-void AppFileTransManager::CleanupLoop()
+void AppManager::CleanupLoop()
 {
     spdlog::info("AppManager: cleanup thread started");
 
@@ -507,6 +571,177 @@ void AppFileTransManager::CleanupLoop()
     }
 
     spdlog::info("AppManager: cleanup thread stopped");
+}
+
+// ============================================================================
+// LLM Worker Thread
+// ============================================================================
+
+void AppManager::LlmWorkerLoop()
+{
+    spdlog::info("AppManager: LLM worker thread started");
+
+    while (running_) {
+        LlmTask task;
+
+        {
+            std::unique_lock<std::mutex> lock(llm_queue_mutex_);
+            llm_queue_cv_.wait(lock, [this] {
+                return !running_ || !llm_queue_.empty();
+            });
+
+            if (!running_ && llm_queue_.empty()) {
+                break;
+            }
+
+            task = std::move(llm_queue_.front());
+            llm_queue_.pop();
+        }
+
+        ProcessLlmRequest(task.msg_id, task.prompt);
+    }
+
+    spdlog::info("AppManager: LLM worker thread stopped");
+}
+
+// ============================================================================
+// LLM Processing
+// ============================================================================
+
+void AppManager::ProcessLlmRequest(const std::string &msg_id,
+                                    const std::string &prompt)
+{
+    // 1. Generate a new session ID for this request
+    std::string session = util::GenerateUuid();
+
+    spdlog::info("AppManager: processing LLM request (msg_id={}, session={})",
+                 msg_id, session);
+
+    // 2. Send prompt to OpenClaw
+    auto send_resp = open_claw_client_->SendMessageAndGetResponse(session, prompt);
+    if (!send_resp) {
+        spdlog::error("AppManager: OpenClaw send failed for msg_id={}", msg_id);
+        SendLlmResponse(msg_id, 3);
+        return;
+    }
+
+    spdlog::info("AppManager: prompt sent to OpenClaw (msg_id={}, session={})",
+                 msg_id, session);
+
+    // 3. Poll for completion (max ~30s, 1s interval)
+    static constexpr int kMaxPollAttempts = 30;
+    static constexpr int kPollIntervalMs = 1000;
+
+    for (int attempt = 0; attempt < kMaxPollAttempts; ++attempt) {
+        if (!running_) {
+            spdlog::warn("AppManager: shutting down while polling for msg_id={}",
+                         msg_id);
+            return;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(kPollIntervalMs));
+
+        auto history = open_claw_client_->GetHistory(session);
+        if (!history) {
+            spdlog::debug("AppManager: history poll failed (attempt {}/{}), "
+                          "retrying", attempt + 1, kMaxPollAttempts);
+            continue;
+        }
+
+        if (IsHistoryComplete(*history)) {
+            spdlog::info("AppManager: LLM request completed (msg_id={}, "
+                         "session={})", msg_id, session);
+            SendLlmResponse(msg_id, 0);
+            return;
+        }
+
+        spdlog::debug("AppManager: history poll not yet complete "
+                      "(attempt {}/{})", attempt + 1, kMaxPollAttempts);
+    }
+
+    // 4. Polling timed out
+    spdlog::warn("AppManager: LLM request timed out (msg_id={}, session={})",
+                 msg_id, session);
+    SendLlmResponse(msg_id, 4);
+}
+
+// ============================================================================
+// History Completion Check
+// ============================================================================
+
+bool AppManager::IsHistoryComplete(const nlohmann::json &history)
+{
+    // Case 1: top-level "status" field with completion value
+    if (history.contains("status") && history["status"].is_string()) {
+        static const std::vector<std::string> kDoneStatuses = {
+            "completed", "done", "success", "finished"
+        };
+        std::string status = history["status"].get<std::string>();
+        for (const auto &s : kDoneStatuses) {
+            if (status == s) return true;
+        }
+        return false;
+    }
+
+    // Case 2: "messages" array — iterate in reverse (latest first)
+    if (history.contains("messages") && history["messages"].is_array()) {
+        const auto &messages = history["messages"];
+        for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
+            if (!it->is_object()) continue;
+
+            if (it->contains("role") && (*it)["role"].is_string()
+                && (*it)["role"].get<std::string>() == "assistant") {
+
+                if (it->contains("status") && (*it)["status"].is_string()) {
+                    std::string status = (*it)["status"].get<std::string>();
+                    static const std::vector<std::string> kDoneStatuses = {
+                        "completed", "done", "success", "finished"
+                    };
+                    for (const auto &s : kDoneStatuses) {
+                        if (status == s) return true;
+                    }
+                }
+                return false;
+            }
+        }
+    }
+
+    // Case 3: "result" or "data" field with sub-status
+    if (history.contains("result") && history["result"].is_object()) {
+        return IsHistoryComplete(history["result"]);
+    }
+
+    if (history.contains("data") && history["data"].is_object()) {
+        return IsHistoryComplete(history["data"]);
+    }
+
+    return false;
+}
+
+// ============================================================================
+// LLM Response
+// ============================================================================
+
+void AppManager::SendLlmResponse(const std::string &msg_id, int resp_code)
+{
+    // Generate timestamp in UTC+8
+    auto now = std::chrono::system_clock::now();
+    auto now_time_t = std::chrono::system_clock::to_time_t(now);
+    now_time_t += 8 * 3600;
+    std::tm utc8_tm;
+    gmtime_r(&now_time_t, &utc8_tm);
+    char ts_buf[64];
+    std::strftime(ts_buf, sizeof(ts_buf), "%Y-%m-%d %H:%M:%S", &utc8_tm);
+
+    nlohmann::json resp;
+    resp["msg_id"] = msg_id;
+    resp["resp"] = resp_code;
+    resp["timestamp"] = std::string(ts_buf);
+
+    mqtt_client_->PublishMessage("app/llm/resp", resp.dump(), 1);
+
+    spdlog::info("AppManager: sent app/llm/resp (msg_id={}, resp={})",
+                 msg_id, resp_code);
 }
 
 }  // namespace cortexlink

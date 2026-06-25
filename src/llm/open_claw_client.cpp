@@ -84,6 +84,89 @@ bool OpenClawClient::SendMessage(const std::string &session,
 }
 
 // ============================================================================
+// Send Message And Get Response
+// ============================================================================
+
+std::optional<nlohmann::json>
+OpenClawClient::SendMessageAndGetResponse(const std::string &session,
+                                           const std::string &content)
+{
+    if (!client_) {
+        spdlog::warn("OpenClawClient: client is null in SendMessageAndGetResponse");
+        return std::nullopt;
+    }
+
+    nlohmann::json body = BuildRequestBody(session, content);
+    std::string body_str = body.dump();
+
+    spdlog::debug("OpenClawClient: POST {} body={}", api_path_, body_str);
+
+    auto res = client_->Post(api_path_, body_str, "application/json");
+
+    if (!res) {
+        spdlog::warn("OpenClawClient: POST failed (error={})",
+                      static_cast<int>(res.error()));
+        return std::nullopt;
+    }
+
+    if (res->status < 200 || res->status >= 300) {
+        spdlog::warn("OpenClawClient: POST returned status {} body={}",
+                      res->status, res->body);
+        return std::nullopt;
+    }
+
+    spdlog::info("OpenClawClient: message sent and response received "
+                 "(session='{}', content_len={})", session, content.size());
+
+    try {
+        return nlohmann::json::parse(res->body);
+    } catch (const nlohmann::json::parse_error &e) {
+        spdlog::warn("OpenClawClient: failed to parse POST response JSON: {}",
+                      e.what());
+        return std::nullopt;
+    }
+}
+
+// ============================================================================
+// Get History
+// ============================================================================
+
+std::optional<nlohmann::json>
+OpenClawClient::GetHistory(const std::string &session)
+{
+    if (!client_) {
+        spdlog::warn("OpenClawClient: client is null in GetHistory");
+        return std::nullopt;
+    }
+
+    std::string path = history_api_path_ + "?session=" + session;
+
+    spdlog::debug("OpenClawClient: GET {}", path);
+
+    auto res = client_->Get(path);
+
+    if (!res) {
+        spdlog::warn("OpenClawClient: GET failed (error={})",
+                      static_cast<int>(res.error()));
+        return std::nullopt;
+    }
+
+    if (res->status < 200 || res->status >= 300) {
+        spdlog::warn("OpenClawClient: GET returned status {} body={}",
+                      res->status, res->body);
+        return std::nullopt;
+    }
+
+    try {
+        return nlohmann::json::parse(res->body);
+    } catch (const nlohmann::json::parse_error &e) {
+        spdlog::warn("OpenClawClient: failed to parse history response JSON: {}",
+                      e.what());
+        return std::nullopt;
+    }
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
