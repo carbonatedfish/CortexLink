@@ -149,6 +149,8 @@ LlmCmdRouter::LlmCmdRouter()
              std::make_unique<LlmGetEventRecordsByDeviceStrategy>());
     Register("get_event_records_by_time",
              std::make_unique<LlmGetEventRecordsByTimeStrategy>());
+    Register("get_user_profiles",
+             std::make_unique<LlmGetUserProfilesStrategy>());
     Register("insert_rule",
              std::make_unique<LlmInsertRuleStrategy>());
     Register("update_rule",
@@ -372,6 +374,22 @@ bool LlmGetEventRecordsByTimeStrategy::BindParams(
 {
     if (!BindTextParam(stmt, 1, params, "start")) return false;
     return BindTextParam(stmt, 2, params, "end");
+}
+
+// ============================================================================
+// LlmGetUserProfilesStrategy
+// ============================================================================
+
+std::string LlmGetUserProfilesStrategy::GetSql(
+    const nlohmann::json & /*params*/) const
+{
+    return "SELECT * FROM user_profile";
+}
+
+bool LlmGetUserProfilesStrategy::BindParams(
+    sqlite3_stmt * /*stmt*/, const nlohmann::json & /*params*/) const
+{
+    return true;
 }
 
 // ============================================================================

@@ -359,9 +359,10 @@ int LuaSandbox::PublishFn(lua_State *L)
     const char *topic_arg = luaL_checkstring(L, 1);
     std::string topic(topic_arg);
 
-    // Security check: forbid broadcast/sql and broadcast/config
+    // Security check: forbid broadcast/sql/, broadcast/config and app/llm/
     if (topic.rfind("broadcast/sql/", 0) == 0 ||
-        topic == "broadcast/config") {
+        topic == "broadcast/config" ||
+        topic.rfind("app/llm/", 0) == 0) {
         spdlog::warn("LuaSandbox: publish to forbidden topic '{}' blocked", topic);
         lua_pushboolean(L, false);
         lua_pushstring(L, "forbidden topic");

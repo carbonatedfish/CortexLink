@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
+#include <sys/stat.h>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -37,6 +38,9 @@ RuleEngine::RuleEngine(MqttClient *mqtt_client,
     } else {
         script_dir_ = ".cortexlink/scripts/";
     }
+
+    // Ensure the script directory exists.
+    mkdir(script_dir_.c_str(), 0755);
 
     // Create the MQTT subscriptions but do NOT register them yet (Start() does).
     event_sub_ = std::make_unique<MqttSubscription>(

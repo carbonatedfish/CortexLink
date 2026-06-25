@@ -137,6 +137,13 @@ public:
     bool BindParams(sqlite3_stmt *, const nlohmann::json &) const override;
 };
 
+// cmd: get_user_profiles
+class LlmGetUserProfilesStrategy : public LlmSqlStrategy {
+public:
+    std::string GetSql(const nlohmann::json &) const override;
+    bool BindParams(sqlite3_stmt *, const nlohmann::json &) const override;
+};
+
 // ---- Concrete write strategies -------------------------------------------
 
 // cmd: insert_rule
