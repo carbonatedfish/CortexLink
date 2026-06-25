@@ -335,6 +335,34 @@ void DeviceManager::OnBroadcastOnline(const std::string & /*topic*/,
         return;
     }
 
+    // Upsert event definitions into the event table
+    if (j.contains("event") && j["event"].is_array()) {
+        for (const auto &e : j["event"]) {
+            if (!e.contains("evt_id") || !e["evt_id"].is_string()) continue;
+            if (!e.contains("evt_name") || !e["evt_name"].is_string()) continue;
+
+            EventTable::Event evt;
+            evt.evt_id   = util::UuidToBlob(e["evt_id"].get<std::string>());
+            evt.dev_id   = dev_id_blob;
+            evt.evt_name = e["evt_name"].get<std::string>();
+            evt.desc     = e.value("desc", "");
+
+            // Serialize params: wrap the params array in {"params": [...]}
+            if (e.contains("params") && e["params"].is_array()) {
+                nlohmann::json params_wrapper;
+                params_wrapper["params"] = e["params"];
+                evt.params = params_wrapper.dump();
+            } else {
+                evt.params = R"({"params":[]})";
+            }
+
+            if (!event_table_.Upsert(evt)) {
+                spdlog::warn("DeviceManager: failed to upsert event {} for device {}",
+                             e["evt_id"].get<std::string>(), dev_id_str);
+            }
+        }
+    }
+
     // Initialize heartbeat timestamp
     {
         std::lock_guard<std::mutex> lock(heartbeat_mutex_);

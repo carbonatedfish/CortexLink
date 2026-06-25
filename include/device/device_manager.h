@@ -12,6 +12,7 @@
 #include <unordered_map>
 
 #include "db/device_property_table.h"
+#include "db/event_table.h"
 #include "device/device_resp_code.h"
 #include "mqtt/mqtt_client.h"
 
@@ -95,6 +96,7 @@ private:
 
     MqttClient *mqtt_client_;
     DevicePropertyTable device_table_;
+    EventTable event_table_;
 
     // ---- subscriptions --------------------------------------------------
 
