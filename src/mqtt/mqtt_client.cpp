@@ -35,6 +35,7 @@ MqttClient::MqttClient(const std::string &client_id, bool clean_session)
 
 MqttClient::~MqttClient()
 {
+    LoopStop();
     if (connected_) {
         Disconnect();
     }

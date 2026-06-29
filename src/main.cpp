@@ -103,6 +103,7 @@ int main(int argc, char **argv)
 
     // 7. Create MQTT client and connect to the broker.
     MqttClient mqtt("cortexlink-host");
+    mqtt.SetCredentials("lky1", "110090");
     // Uncomment to set credentials if the broker requires them:
     // mqtt.SetCredentials("username", "password");
     if (!mqtt.Connect(mqtt_host, mqtt_port)) {
@@ -193,18 +194,12 @@ int main(int argc, char **argv)
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
-    // 17. Graceful shutdown (reverse order of startup).
+    // 17. Graceful shutdown — destructors run in reverse declaration order:
+    //     llm_sql_proxy → sql_proxy → app_mgr → rule_engine → dev_mgr → mqtt.
+    //     Each destructor calls Stop()/Disconnect(), so MQTT users unsubscribe
+    //     before MqttClient shuts down the connection.
     spdlog::info("=== CortexLink shutting down ===");
-
-    llm_sql_proxy.Stop();
-    sql_proxy.Stop();
-    app_mgr.Stop();
-    rule_engine.Stop();
-    dev_mgr.Stop();
-    mqtt.LoopStop();
-    mqtt.Disconnect();
     DBTable::Shutdown();
 
-    spdlog::info("=== CortexLink shutdown complete ===");
     return 0;
 }
