@@ -154,6 +154,8 @@ void AppSqlProxy::HandleQuery(const nlohmann::json &request)
     // 1. Build SQL from strategy
     std::string sql = strategy->GetSql(params);
 
+    spdlog::debug("AppSqlProxy: executing SQL cmd='{}': {}", cmd, sql);
+
     // 2. Execute via AppSqlTable::ExecuteRead (inherited from DBTable)
     std::vector<nlohmann::json> rows;
     bool ok = db_.ExecuteRead(

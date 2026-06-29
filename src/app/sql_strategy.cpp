@@ -35,6 +35,8 @@ bool SqlStrategy::BindUuidParam(sqlite3_stmt *stmt, int idx,
                       sqlite3_errmsg(sqlite3_db_handle(stmt)));
         return false;
     }
+    spdlog::debug("SqlStrategy: bound uuid param '{}' at idx {} value='{}'",
+                  key, idx, uuid_str);
     return true;
 }
 
@@ -72,6 +74,8 @@ bool SqlStrategy::BindIntParam(sqlite3_stmt *stmt, int idx,
                       sqlite3_errmsg(sqlite3_db_handle(stmt)));
         return false;
     }
+    spdlog::debug("SqlStrategy: bound int param '{}' at idx {} value={}",
+                  key, idx, int_val);
     return true;
 }
 

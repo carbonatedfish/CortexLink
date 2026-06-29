@@ -136,6 +136,9 @@ void RuleEngine::InjectEvent(const std::array<uint8_t, 16> &evt_id,
         event_queue_.push(std::move(task));
     }
     queue_cv_.notify_one();
+
+    spdlog::debug("RuleEngine: event queued evt={} dev={}",
+                  util::BlobToUuid(evt_id), util::BlobToUuid(dev_id));
 }
 
 // ===========================================================================
@@ -196,6 +199,9 @@ void RuleEngine::OnDeviceEvent(const std::string &topic,
         event_queue_.push(std::move(task));
     }
     queue_cv_.notify_one();
+
+    spdlog::debug("RuleEngine: event received topic={} evt_id={} dev={}",
+                  topic, evt_id_str, dev_uuid_str);
 }
 
 // ===========================================================================
@@ -335,6 +341,9 @@ void RuleEngine::ProcessEvent(const EventTask &task)
 
     const auto &evt_def = evt_opt.value();
 
+    spdlog::debug("RuleEngine: event '{}' found for processing (evt_id={})",
+                  evt_def.evt_name, util::BlobToUuid(task.evt_id));
+
     // 2. Record the event in history.
     EventRecordTable::EventRecord record;
     record.evt_id = task.evt_id;
@@ -346,11 +355,16 @@ void RuleEngine::ProcessEvent(const EventTask &task)
     // 3. Find matching rules for this event.
     auto rule_ids = event_rule_table_.GetRulesByEvtId(task.evt_id);
     if (rule_ids.empty()) {
+        spdlog::debug("RuleEngine: no rules bound to event evt_id={}",
+                      util::BlobToUuid(task.evt_id));
         return;  // no rules bound to this event
     }
 
     std::string evt_id_str = util::BlobToUuid(task.evt_id);
     std::string dev_id_str = util::BlobToUuid(task.dev_id);
+
+    spdlog::debug("RuleEngine: found {} matching rules for event '{}'",
+                  rule_ids.size(), evt_def.evt_name);
 
     // 4. Process each rule.
     for (int64_t rule_id : rule_ids) {
@@ -380,6 +394,8 @@ void RuleEngine::ProcessEvent(const EventTask &task)
         // 4c. Evaluate condition expression (if present).
         if (!rule.cond_expr.empty()) {
             auto ast = ParseCondition(rule.cond_expr, evt_id_str);
+            spdlog::debug("RuleEngine: evaluating condition for rule_id={} expr='{}'",
+                          rule_id, rule.cond_expr);
             if (ast != nullptr) {
                 // Parse event params for condition evaluation.
                 auto event_params = ParseEventParams(task.params_json);
@@ -424,6 +440,9 @@ void RuleEngine::ProcessEvent(const EventTask &task)
                                 std::istreambuf_iterator<char>());
         script_file.close();
 
+        spdlog::debug("RuleEngine: script loaded rule_id={} path={} size={}",
+                      rule_id, script_path, script_text.size());
+
         if (script_text.empty()) {
             spdlog::error("RuleEngine: rule {} ({}) script file is empty: {}",
                           rule_id, rule.rule_name, script_path);
@@ -436,6 +455,9 @@ void RuleEngine::ProcessEvent(const EventTask &task)
         lua_ctx.evt_name = evt_def.evt_name;
         lua_ctx.dev_id = dev_id_str;
         lua_ctx.params = ParseEventParams(task.params_json);
+
+        spdlog::debug("RuleEngine: building Lua context evt={} dev={} params_count={}",
+                      evt_def.evt_name, dev_id_str, lua_ctx.params.size());
 
         spdlog::info("RuleEngine: executing rule {} ({}) for event {}",
                      rule_id, rule.rule_name, evt_def.evt_name);
@@ -469,7 +491,9 @@ std::string RuleEngine::ExtractDevUuid(const std::string &topic)
         return {};
     }
 
-    return topic.substr(start, end - start);
+    std::string uuid = topic.substr(start, end - start);
+    spdlog::debug("RuleEngine: extracted dev_uuid='{}' from topic '{}'", uuid, topic);
+    return uuid;
 }
 
 std::unordered_map<std::string, std::string>

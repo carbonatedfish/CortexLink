@@ -2,6 +2,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "util/uuid_util.h"
+
 namespace cortexlink {
 
 bool DevicePropertyTable::CreateTable()
@@ -47,6 +49,8 @@ bool DevicePropertyTable::Insert(const DeviceProperty &dev)
         return SQLITE_OK;
     };
 
+    spdlog::debug("DevicePropertyTable: insert dev={} name='{}'",
+                  util::BlobToUuid(dev.dev_id), dev.dev_name);
     return ExecuteWrite(sql, bind);
 }
 
@@ -107,6 +111,8 @@ bool DevicePropertyTable::Upsert(const DeviceProperty &dev)
 bool DevicePropertyTable::Delete(const std::array<uint8_t, 16> &dev_id)
 {
     const char *sql = "DELETE FROM device_property WHERE dev_id=?;";
+
+    spdlog::debug("DevicePropertyTable: delete dev={}", util::BlobToUuid(dev_id));
 
     auto bind = [&dev_id](sqlite3_stmt *stmt) -> int {
         sqlite3_bind_blob(stmt, 1, dev_id.data(),

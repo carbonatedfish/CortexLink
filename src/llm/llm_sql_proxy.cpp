@@ -108,6 +108,8 @@ void LlmSqlProxy::HandleRequest(const httplib::Request &req,
         return;
     }
 
+    spdlog::debug("LlmSqlProxy: request cmd='{}'", request.value("cmd", "?"));
+
     nlohmann::json response = ProcessRequest(request);
     SendJsonResponse(res, response);
 }
@@ -143,6 +145,8 @@ nlohmann::json LlmSqlProxy::ProcessRequest(const nlohmann::json &request)
     // 4. Build SQL
     std::string sql = strategy->GetSql(params);
 
+    spdlog::debug("LlmSqlProxy: executing SQL cmd='{}': {}", cmd, sql);
+
     // 5. Execute
     bool ok = false;
     nlohmann::json extra;
@@ -173,6 +177,8 @@ nlohmann::json LlmSqlProxy::ProcessRequest(const nlohmann::json &request)
 
     spdlog::info("LlmSqlProxy: cmd '{}' returned {} rows",
                  cmd, rows.size());
+    spdlog::debug("LlmSqlProxy: response cmd='{}' resp={} rows={}",
+                  cmd, kRespOk, rows.size());
     return BuildResponse(kRespOk, rows, extra);
 }
 

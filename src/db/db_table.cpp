@@ -61,6 +61,8 @@ bool DBTable::ExecuteWrite(const std::string &sql)
 {
     std::lock_guard<std::mutex> lock(write_mutex_);
 
+    spdlog::debug("DBTable: executing write SQL: {}", sql);
+
     sqlite3_stmt *stmt = nullptr;
     int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
@@ -83,6 +85,8 @@ bool DBTable::ExecuteWrite(
     const std::function<int(sqlite3_stmt *)> &bind_fn)
 {
     std::lock_guard<std::mutex> lock(write_mutex_);
+
+    spdlog::debug("DBTable: executing write SQL (with bind): {}", sql);
 
     sqlite3_stmt *stmt = nullptr;
     int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
@@ -114,6 +118,8 @@ bool DBTable::ExecuteRead(const std::string &sql)
 {
     std::lock_guard<std::mutex> lock(write_mutex_);
 
+    spdlog::debug("DBTable: executing read SQL: {}", sql);
+
     sqlite3_stmt *stmt = nullptr;
     int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
@@ -138,6 +144,8 @@ bool DBTable::ExecuteRead(
     const std::function<void(sqlite3_stmt *)> &row_fn)
 {
     std::lock_guard<std::mutex> lock(write_mutex_);
+
+    spdlog::debug("DBTable: executing read SQL (with bind): {}", sql);
 
     sqlite3_stmt *stmt = nullptr;
     int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);

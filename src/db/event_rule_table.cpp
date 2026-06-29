@@ -4,6 +4,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "util/uuid_util.h"
+
 namespace cortexlink {
 
 bool EventRuleTable::CreateTable()
@@ -31,6 +33,8 @@ bool EventRuleTable::Insert(const EventRule &er)
         return SQLITE_OK;
     };
 
+    spdlog::debug("EventRuleTable: insert evt={} rule_id={}",
+                  util::BlobToUuid(er.evt_id), er.rule_id);
     return ExecuteWrite(sql, bind);
 }
 
@@ -77,6 +81,8 @@ std::vector<int64_t> EventRuleTable::GetRulesByEvtId(
     };
 
     ExecuteRead(sql, bind, row);
+    spdlog::debug("EventRuleTable: found {} rules for evt={}",
+                  results.size(), util::BlobToUuid(evt_id));
     return results;
 }
 

@@ -4,6 +4,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "util/uuid_util.h"
+
 namespace cortexlink {
 
 bool EventTable::CreateTable()
@@ -60,6 +62,9 @@ bool EventTable::Upsert(const Event &evt)
         return SQLITE_OK;
     };
 
+    spdlog::debug("EventTable: upsert evt={} name='{}' dev={}",
+                  util::BlobToUuid(evt.evt_id), evt.evt_name,
+                  util::BlobToUuid(evt.dev_id));
     return ExecuteWrite(sql, bind);
 }
 
@@ -108,6 +113,8 @@ std::optional<EventTable::Event> EventTable::GetByEvtId(
     };
 
     ExecuteRead(sql, bind, row);
+    spdlog::debug("EventTable: lookup evt={} found={}",
+                  util::BlobToUuid(evt_id), result.has_value());
     return result;
 }
 

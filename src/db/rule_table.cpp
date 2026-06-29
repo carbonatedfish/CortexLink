@@ -54,6 +54,7 @@ bool RuleTable::Insert(Rule &rule)
     }
 
     rule.rule_id = sqlite3_last_insert_rowid(db_);
+    spdlog::debug("RuleTable: insert rule_id={} name='{}'", rule.rule_id, rule.rule_name);
     return true;
 }
 
@@ -220,6 +221,7 @@ int64_t RuleTable::IncrementCount(int64_t rule_id)
     }
 
     sqlite3_finalize(r_stmt);
+    spdlog::debug("RuleTable: increment rule_id={} new_count={}", rule_id, new_count);
     return new_count;
 }
 

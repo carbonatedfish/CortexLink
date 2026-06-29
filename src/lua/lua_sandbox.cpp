@@ -270,6 +270,9 @@ int LuaSandbox::GetDataFn(lua_State *L)
     auto dev_id_blob = util::UuidToBlob(dev_uuid_str);
     auto result = self->device_data_table_->Get(dev_id_blob, data_name);
 
+    spdlog::debug("LuaSandbox: get_data dev={} name={} found={}",
+                  dev_uuid_str, data_name, result.has_value());
+
     if (!result.has_value()) {
         lua_pushnil(L);
         return 1;
@@ -432,9 +435,14 @@ int LuaSandbox::GetDeviceStateFn(lua_State *L)
     auto dev = self->device_property_table_->GetByDevId(dev_id_blob);
 
     if (!dev.has_value()) {
+        spdlog::debug("LuaSandbox: get_device_state dev={} result=not_found",
+                      dev_uuid_str);
         lua_pushnil(L);
         return 1;
     }
+
+    spdlog::debug("LuaSandbox: get_device_state dev={} state='{}'",
+                  dev_uuid_str, dev->dev_state);
 
     lua_pushstring(L, dev->dev_state.c_str());
     return 1;
@@ -622,6 +630,8 @@ bool LuaSandbox::Execute(const std::string &script,
         ctx->timed_out = false;
 
         // Create isolated Lua state
+        spdlog::debug("LuaSandbox: creating Lua state rule_id={} attempt={}",
+                      rule_id, attempt + 1);
         lua_State *L = CreateState(ctx.get());
         if (L == nullptr) {
             spdlog::error("LuaSandbox: failed to create Lua state (attempt {})",
@@ -632,6 +642,9 @@ bool LuaSandbox::Execute(const std::string &script,
         // Inject read-only globals
         InjectEvent(L, evt);
         InjectTime(L);
+
+        spdlog::debug("LuaSandbox: globals injected rule_id={} evt='{}' dev={}",
+                      rule_id, evt.evt_name, evt.dev_id);
 
         // Set instruction-count hook
         lua_sethook(L, InstructionHook, LUA_MASKCOUNT, kHookInterval);
@@ -647,7 +660,11 @@ bool LuaSandbox::Execute(const std::string &script,
             return false;
         }
 
+        spdlog::debug("LuaSandbox: script loaded rule_id={} size={}",
+                      rule_id, script.size());
+
         // Execute
+        spdlog::debug("LuaSandbox: executing pcall rule_id={}", rule_id);
         int pcall_ret = lua_pcall(L, 0, 0, 0);
 
         if (pcall_ret == LUA_OK) {
@@ -677,6 +694,8 @@ bool LuaSandbox::Execute(const std::string &script,
                              rule_id,
                              err_msg ? err_msg : "timeout",
                              kRetryDelayMs);
+                spdlog::debug("LuaSandbox: sleeping {}ms before retry rule_id={}",
+                              kRetryDelayMs, rule_id);
                 std::this_thread::sleep_for(std::chrono::milliseconds(kRetryDelayMs));
                 continue;  // → fresh lua_State on next iteration
             }

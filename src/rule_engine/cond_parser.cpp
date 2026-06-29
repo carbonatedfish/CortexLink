@@ -174,6 +174,7 @@ private:
 
         // {time}
         if (content == "time") {
+            spdlog::debug("Lexer: resolved brace '{{time}}'");
             return {TokenType::TIME, ""};
         }
 
@@ -183,6 +184,7 @@ private:
             if (param_name.empty()) {
                 spdlog::warn("Lexer: empty event param name");
             }
+            spdlog::debug("Lexer: resolved brace '{{event.{}}}'", param_name);
             Token t{TokenType::EVENT_PARAM, ""};
             t.value = param_name;
             return t;
@@ -196,6 +198,7 @@ private:
             if (did.empty() || dname.empty()) {
                 spdlog::warn("Lexer: malformed device data reference {{{}}}", content);
             }
+            spdlog::debug("Lexer: resolved brace '{{{}.{}}}'", did, dname);
             Token t{TokenType::DEVICE_DATA, ""};
             t.dev_id = did;
             t.data_name = dname;
@@ -280,6 +283,8 @@ public:
                          "at position {}",
                          TokenName(cur_.type), lexer_.pos());
         }
+        spdlog::debug("Parser: produced AST for condition (root_type={})",
+                      ast ? static_cast<int>(ast->type) : -1);
         return ast;
     }
 
@@ -457,6 +462,8 @@ std::string EvalLeafValue(const AstNode *node, const EvalContext &ctx) {
     case AstType::EVENT_PARAM: {
         auto it = ctx.event_params.find(node->value);
         if (it != ctx.event_params.end()) {
+            spdlog::debug("EvaluateAst: resolved event param '{}' = '{}'",
+                          node->value, it->second);
             return it->second;
         }
         spdlog::warn("EvaluateAst: event param '{}' not found in context",
@@ -467,7 +474,11 @@ std::string EvalLeafValue(const AstNode *node, const EvalContext &ctx) {
     case AstType::DEVICE_DATA: {
         if (ctx.get_device_data) {
             auto val = ctx.get_device_data(node->dev_id, node->data_name);
-            if (val.has_value()) return *val;
+            if (val.has_value()) {
+                spdlog::debug("EvaluateAst: resolved device data '{}.{}' = '{}'",
+                              node->dev_id, node->data_name, *val);
+                return *val;
+            }
         }
         spdlog::warn("EvaluateAst: device data '{}.{}' not found",
                      node->dev_id, node->data_name);
@@ -490,6 +501,9 @@ std::string EvalLeafValue(const AstNode *node, const EvalContext &ctx) {
 bool CompareValues(const std::string &lhs, const std::string &rhs, TokenType op) {
     bool lhs_num = IsNumeric(lhs);
     bool rhs_num = IsNumeric(rhs);
+
+    spdlog::debug("CompareValues: lhs='{}' rhs='{}' op={} lhs_num={} rhs_num={}",
+                  lhs, rhs, static_cast<int>(op), lhs_num, rhs_num);
 
     if (lhs_num && rhs_num) {
         double l = ToNumber(lhs);
@@ -592,8 +606,13 @@ std::unique_ptr<AstNode> ParseCondition(const std::string &cond_expr,
         condition = condition.substr(c_start, c_end - c_start);
 
         if (condition.empty()) {
+            spdlog::debug("ParseCondition: matched evt_id={} condition always-true",
+                          evt_id_str);
             return nullptr;  // always-true
         }
+
+        spdlog::debug("ParseCondition: matched evt_id={} condition='{}'",
+                      evt_id_str, condition);
 
         Parser parser(condition);
         return parser.Parse();

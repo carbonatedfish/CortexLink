@@ -119,7 +119,9 @@ OpenClawClient::SendMessageAndGetResponse(const std::string &session,
                  "(session='{}', content_len={})", session, content.size());
 
     try {
-        return nlohmann::json::parse(res->body);
+        auto parsed = nlohmann::json::parse(res->body);
+        spdlog::debug("OpenClawClient: response parsed successfully session='{}'", session);
+        return parsed;
     } catch (const nlohmann::json::parse_error &e) {
         spdlog::warn("OpenClawClient: failed to parse POST response JSON: {}",
                       e.what());
@@ -158,7 +160,9 @@ OpenClawClient::GetHistory(const std::string &session)
     }
 
     try {
-        return nlohmann::json::parse(res->body);
+        auto parsed = nlohmann::json::parse(res->body);
+        spdlog::debug("OpenClawClient: history fetched session='{}'", session);
+        return parsed;
     } catch (const nlohmann::json::parse_error &e) {
         spdlog::warn("OpenClawClient: failed to parse history response JSON: {}",
                       e.what());

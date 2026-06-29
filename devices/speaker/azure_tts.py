@@ -86,6 +86,8 @@ class AzureTTS:
         os.close(fd)
 
         try:
+            logger.debug("TTS: synthesizing text_len=%d voice='%s' rate='%s' volume=%d",
+                         len(text), voice, rate, volume)
             audio_config = speechsdk.audio.AudioOutputConfig(filename=temp_path)
             synthesizer = speechsdk.SpeechSynthesizer(
                 speech_config=speech_config,

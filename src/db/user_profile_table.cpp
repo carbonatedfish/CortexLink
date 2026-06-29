@@ -4,6 +4,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "util/uuid_util.h"
+
 namespace cortexlink {
 
 bool UserProfileTable::CreateTable()
@@ -33,6 +35,8 @@ bool UserProfileTable::Insert(const UserProfile &user)
         return SQLITE_OK;
     };
 
+    spdlog::debug("UserProfileTable: insert user_id={} name='{}'",
+                  util::BlobToUuid(user.user_id), user.user_name);
     return ExecuteWrite(sql, bind);
 }
 
@@ -93,6 +97,8 @@ std::optional<UserProfileTable::UserProfile> UserProfileTable::GetByUserId(
     };
 
     ExecuteRead(sql, bind, row);
+    spdlog::debug("UserProfileTable: lookup user_id={} found={}",
+                  util::BlobToUuid(user_id), result.has_value());
     return result;
 }
 

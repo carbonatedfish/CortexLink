@@ -4,6 +4,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "util/uuid_util.h"
+
 namespace cortexlink {
 
 bool DeviceDataTable::CreateTable()
@@ -37,6 +39,8 @@ bool DeviceDataTable::Upsert(const DeviceData &data)
         return SQLITE_OK;
     };
 
+    spdlog::debug("DeviceDataTable: upsert dev={} name={}",
+                  util::BlobToUuid(data.dev_id), data.data_name);
     return ExecuteWrite(sql, bind);
 }
 
@@ -69,6 +73,8 @@ std::optional<DeviceDataTable::DeviceData> DeviceDataTable::Get(
     };
 
     ExecuteRead(sql, bind, row);
+    spdlog::debug("DeviceDataTable: lookup dev={} name={} found={}",
+                  util::BlobToUuid(dev_id), data_name, result.has_value());
     return result;
 }
 

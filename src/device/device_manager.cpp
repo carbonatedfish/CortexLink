@@ -215,6 +215,9 @@ bool DeviceManager::Send(const std::string &topic, const std::string &payload)
     }
     msg["msg_id"] = msg_id;
 
+    spdlog::debug("DeviceManager: Send topic={} msg_id={} payload_len={}",
+                  topic, msg_id, msg.dump().size());
+
     return mqtt_client_->PublishMessage(topic, msg.dump());
 }
 
@@ -282,6 +285,9 @@ void DeviceManager::OnBroadcastOnline(const std::string & /*topic*/,
     }
 
     auto dev_id_blob = util::UuidToBlob(dev_id_str);
+
+    spdlog::debug("DeviceManager: broadcast/online received dev_id={} dev_name={} dev_type={}",
+                  dev_id_str, j.value("dev_name", ""), j.value("dev_type", ""));
 
     // Build DeviceProperty from broadcast/online payload
     DevicePropertyTable::DeviceProperty dev;
@@ -484,6 +490,11 @@ void DeviceManager::OnBroadcastConfig(const std::string & /*topic*/,
     }
 
     spdlog::info("DeviceManager: config updated for device {}", dev_id_str);
+    spdlog::debug("DeviceManager: config fields applied dev_id={} dev_name={} location={} user_param={}",
+                  dev_id_str,
+                  dev_name.has_value() ? *dev_name : "(unchanged)",
+                  location.has_value() ? *location : "(unchanged)",
+                  user_param.has_value() ? *user_param : "(unchanged)");
 
     // 6. Forward config to the device via device/{uuid}/config
     nlohmann::json config_msg;
@@ -526,6 +537,9 @@ void DeviceManager::HeartbeatCheckLoop()
 
         auto now = std::chrono::steady_clock::now();
         std::vector<std::string> stale_devices;
+
+        spdlog::debug("DeviceManager: heartbeat check iteration — {} devices tracked, {} pending",
+                      last_heartbeat_.size(), pending_requests_.size());
 
         // Collect devices whose heartbeat has timed out (> 30 s).
         {

@@ -45,6 +45,8 @@ bool LlmSqlStrategy::BindUuidParam(sqlite3_stmt *stmt, int idx,
                       sqlite3_errmsg(sqlite3_db_handle(stmt)));
         return false;
     }
+    spdlog::debug("LlmSqlStrategy: bound uuid param '{}' at idx {} value='{}'",
+                  key, idx, uuid_str);
     return true;
 }
 
@@ -82,6 +84,8 @@ bool LlmSqlStrategy::BindIntParam(sqlite3_stmt *stmt, int idx,
                       sqlite3_errmsg(sqlite3_db_handle(stmt)));
         return false;
     }
+    spdlog::debug("LlmSqlStrategy: bound int param '{}' at idx {} value={}",
+                  key, idx, int_val);
     return true;
 }
 
@@ -103,6 +107,8 @@ bool LlmSqlStrategy::BindTextParam(sqlite3_stmt *stmt, int idx,
                       sqlite3_errmsg(sqlite3_db_handle(stmt)));
         return false;
     }
+    spdlog::debug("LlmSqlStrategy: bound text param '{}' at idx {} value='{}'",
+                  key, idx, text);
     return true;
 }
 

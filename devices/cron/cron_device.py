@@ -452,6 +452,10 @@ class CronDevice:
             "add_cron: id=%s expr='%s' trigger_count=%d",
             cron_id, expr, trigger_count,
         )
+        logger.debug(
+            "add_cron: cron_id=%s expr='%s' trigger_count=%d params=%s",
+            cron_id, expr, trigger_count, custom_params,
+        )
 
     def _handle_add_relative_cron(self, msg_id: str, action_params: list) -> None:
         """Handle the 'add_relative_cron' action."""
@@ -598,6 +602,9 @@ class CronDevice:
 
             # Compute current unix minute for dedup
             current_minute_key = int(time.time() / 60)
+
+            logger.debug("Cron scheduler: evaluating %d entries at %02d:%02d",
+                         len(self._entries), hour, minute)
 
             # Snapshot entries under lock
             with self._lock:

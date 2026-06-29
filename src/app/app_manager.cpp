@@ -234,6 +234,8 @@ void AppManager::HandleFragment(const std::string &payload, FileType type)
 
             spdlog::info("AppManager: transfer started for '{}' ({} frags, key={})",
                          safe_name, total_frags, key);
+            spdlog::debug("AppManager: new transfer state created key={} total_frags={} checksum={}",
+                          key, total_frags, checksum);
             SendAck(resp_topic, frag_id, "OK");
             return;
         }
@@ -277,8 +279,8 @@ void AppManager::HandleFragment(const std::string &payload, FileType type)
         state.fragments[frag_id] = data;
         state.last_frag_time = now;
 
-        spdlog::debug("AppManager: received fragment {}/{} for '{}'",
-                      frag_id + 1, state.total_frags, key);
+        spdlog::debug("AppManager: received fragment {}/{} for '{}' (data_len={})",
+                      frag_id + 1, state.total_frags, key, data.size());
         SendAck(resp_topic, frag_id, "OK");
 
         // 10. Check if all fragments received — extract state and erase from
@@ -301,6 +303,8 @@ void AppManager::TryComplete(const std::string &key, FileType type,
     std::string resp_topic = MakeRespTopic(type);
 
     // 1. Reassemble fragments in order
+    spdlog::debug("AppManager: reassembling {} fragments for '{}'",
+                  state.total_frags, key);
     std::vector<uint8_t> file_data;
     for (int i = 0; i < state.total_frags; ++i) {
         auto frag_it = state.fragments.find(i);
@@ -328,6 +332,7 @@ void AppManager::TryComplete(const std::string &key, FileType type,
             SendAck(resp_topic, state.total_frags - 1, "CHECKSUM_ERR");
             return;
         }
+        spdlog::debug("AppManager: checksum OK for '{}'", key);
     }
 
     // 3. Write file to disk
@@ -359,6 +364,8 @@ void AppManager::TryComplete(const std::string &key, FileType type,
 
     spdlog::info("AppManager: transfer complete — saved '{}' ({} bytes)",
                  file_path, file_data.size());
+    spdlog::debug("AppManager: file written path='{}' size={}",
+                  file_path, file_data.size());
     SendAck(resp_topic, state.total_frags - 1, "OK");
 }
 
@@ -600,6 +607,9 @@ void AppManager::LlmWorkerLoop()
             llm_queue_.pop();
         }
 
+        spdlog::debug("AppManager: LLM worker dequeued msg_id={} prompt_len={}",
+                      task.msg_id, task.prompt.size());
+
         ProcessLlmRequest(task.msg_id, task.prompt);
     }
 
@@ -651,6 +661,8 @@ void AppManager::ProcessLlmRequest(const std::string &msg_id,
         }
 
         if (IsHistoryComplete(*history)) {
+            spdlog::debug("AppManager: history complete msg_id={} session={}",
+                          msg_id, session);
             spdlog::info("AppManager: LLM request completed (msg_id={}, "
                          "session={})", msg_id, session);
             SendLlmResponse(msg_id, 0);

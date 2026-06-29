@@ -322,6 +322,9 @@ class SpeakerDevice:
         except (ValueError, TypeError):
             volume = self._default_volume
 
+        logger.debug("speak: text='%s' voice='%s' rate='%s' volume=%d",
+                     text, voice, rate, volume)
+
         # Acknowledge immediately
         self._send_s2m(msg_id, _RESP_OK)
 
@@ -371,6 +374,8 @@ class SpeakerDevice:
             if wav_path is None:
                 logger.error("TTS synthesis failed")
                 return
+
+            logger.debug("TTS output file: %s", wav_path)
 
             # Reset stop event before playing
             self._stop_playback.clear()

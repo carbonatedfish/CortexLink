@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <random>
 
+#include <spdlog/spdlog.h>
+
 namespace cortexlink {
 namespace util {
 
@@ -12,6 +14,8 @@ std::array<uint8_t, 16> UuidToBlob(const std::string &uuid_str)
     std::array<uint8_t, 16> blob{};
     // Expected format: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" (36 chars)
     if (uuid_str.size() != 36) {
+        spdlog::debug("UUID parse failed: wrong length {} (expected 36): '{}'",
+                      uuid_str.size(), uuid_str);
         return blob;
     }
 
@@ -23,6 +27,8 @@ std::array<uint8_t, 16> UuidToBlob(const std::string &uuid_str)
                          &bytes[8], &bytes[9], &bytes[10], &bytes[11],
                          &bytes[12], &bytes[13], &bytes[14], &bytes[15]);
     if (n != 16) {
+        spdlog::debug("UUID parse failed: sscanf parsed {} fields (expected 16) for '{}'",
+                      n, uuid_str);
         return blob;
     }
 

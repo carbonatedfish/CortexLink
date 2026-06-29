@@ -80,6 +80,7 @@ void MqttClient::SetCredentials(const std::string &username,
 {
     username_ = username;
     password_ = password;
+    spdlog::debug("MqttClient: credentials set (user='{}')", username_);
 }
 
 // ---- subscription management --------------------------------------------
@@ -188,6 +189,8 @@ void MqttClient::on_connect(int rc)
 
         // Re-subscribe existing subscriptions (for persistent sessions)
         std::lock_guard<std::mutex> lock(mutex_);
+        spdlog::debug("MqttClient: re-subscribing {} topics after reconnect",
+                      subscriptions_.size());
         for (auto &kv : subscriptions_) {
             int mid = 0;
             subscribe(&mid, kv.second->GetTopic().c_str(), kv.second->GetQos());

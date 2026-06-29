@@ -4,6 +4,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "util/uuid_util.h"
+
 namespace cortexlink {
 
 bool EventRecordTable::CreateTable()
@@ -55,6 +57,8 @@ bool EventRecordTable::Insert(EventRecord &record)
     }
 
     record.id = sqlite3_last_insert_rowid(db_);
+    spdlog::debug("EventRecordTable: insert record id={} evt={}",
+                  record.id, util::BlobToUuid(record.evt_id));
     return true;
 }
 

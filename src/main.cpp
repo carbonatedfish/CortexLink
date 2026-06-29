@@ -66,6 +66,10 @@ int main(int argc, char **argv)
     util::InitLogger(log_dir, log_level);
     spdlog::info("=== CortexLink starting ===");
 
+    spdlog::debug("CortexLink config: mqtt={}:{} openclaw={} llm_sql_port={} db={} log_level={}",
+                  mqtt_host, mqtt_port, openclaw_endpoint, llm_sql_port, db_path,
+                  cli["log-level"].as<std::string>());
+
     // 5. Initialize database.
     if (!DBTable::Initialize(db_path)) {
         spdlog::error("Failed to initialize database at {}", db_path);
