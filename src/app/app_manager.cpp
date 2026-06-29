@@ -183,7 +183,7 @@ void AppManager::HandleFragment(const std::string &payload, FileType type)
         j = nlohmann::json::parse(payload);
     } catch (const nlohmann::json::parse_error &e) {
         spdlog::warn("AppManager: failed to parse fragment JSON: {}", e.what());
-        SendAck(MakeRespTopic(type), -1, "INVALID_FRAG");
+        SendAck(MakeRespTopic(type), -1, FileRespCode::kInvalidFrag);
         return;
     }
 
@@ -199,7 +199,7 @@ void AppManager::HandleFragment(const std::string &payload, FileType type)
         spdlog::warn("AppManager: invalid fragment — missing required fields "
                      "(frag_id={}, file_name='{}', data_len={})",
                      frag_id, file_name, data.size());
-        SendAck(MakeRespTopic(type), frag_id >= 0 ? frag_id : -1, "INVALID_FRAG");
+        SendAck(MakeRespTopic(type), frag_id >= 0 ? frag_id : -1, FileRespCode::kInvalidFrag);
         return;
     }
 
@@ -207,7 +207,7 @@ void AppManager::HandleFragment(const std::string &payload, FileType type)
     std::string safe_name = SanitizeFileName(file_name);
     if (safe_name.empty()) {
         spdlog::warn("AppManager: rejected filename '{}'", file_name);
-        SendAck(MakeRespTopic(type), frag_id, "INVALID_FRAG");
+        SendAck(MakeRespTopic(type), frag_id, FileRespCode::kInvalidFrag);
         return;
     }
 
@@ -236,7 +236,7 @@ void AppManager::HandleFragment(const std::string &payload, FileType type)
                          safe_name, total_frags, key);
             spdlog::debug("AppManager: new transfer state created key={} total_frags={} checksum={}",
                           key, total_frags, checksum);
-            SendAck(resp_topic, frag_id, "OK");
+            SendAck(resp_topic, frag_id, FileRespCode::kOk);
             return;
         }
 
@@ -245,7 +245,7 @@ void AppManager::HandleFragment(const std::string &payload, FileType type)
         if (it == transfers_.end()) {
             spdlog::warn("AppManager: fragment {} for unknown transfer '{}'",
                          frag_id, key);
-            SendAck(resp_topic, frag_id, "INVALID_FRAG");
+            SendAck(resp_topic, frag_id, FileRespCode::kInvalidFrag);
             return;
         }
 
@@ -258,7 +258,7 @@ void AppManager::HandleFragment(const std::string &payload, FileType type)
             spdlog::warn("AppManager: transfer '{}' timed out ({}ms since last fragment)",
                          key, elapsed.count());
             transfers_.erase(it);
-            SendAck(resp_topic, frag_id, "TIMEOUT");
+            SendAck(resp_topic, frag_id, FileRespCode::kTimeout);
             return;
         }
 
@@ -281,7 +281,7 @@ void AppManager::HandleFragment(const std::string &payload, FileType type)
 
         spdlog::debug("AppManager: received fragment {}/{} for '{}' (data_len={})",
                       frag_id + 1, state.total_frags, key, data.size());
-        SendAck(resp_topic, frag_id, "OK");
+        SendAck(resp_topic, frag_id, FileRespCode::kOk);
 
         // 10. Check if all fragments received — extract state and erase from
         //     the map so we can do I/O + SHA outside the lock.
@@ -311,7 +311,7 @@ void AppManager::TryComplete(const std::string &key, FileType type,
         if (frag_it == state.fragments.end()) {
             spdlog::error("AppManager: missing fragment {} for '{}' during reassembly",
                           i, key);
-            SendAck(resp_topic, state.total_frags - 1, "INVALID_FRAG");
+            SendAck(resp_topic, state.total_frags - 1, FileRespCode::kInvalidFrag);
             return;
         }
         std::vector<uint8_t> decoded = Base64Decode(frag_it->second);
@@ -329,7 +329,7 @@ void AppManager::TryComplete(const std::string &key, FileType type,
             spdlog::warn("AppManager: checksum mismatch for '{}' "
                          "(expected={}, computed={})",
                          key, expected_lower, computed);
-            SendAck(resp_topic, state.total_frags - 1, "CHECKSUM_ERR");
+            SendAck(resp_topic, state.total_frags - 1, FileRespCode::kChecksumErr);
             return;
         }
         spdlog::debug("AppManager: checksum OK for '{}'", key);
@@ -342,7 +342,7 @@ void AppManager::TryComplete(const std::string &key, FileType type,
     if (ec) {
         spdlog::error("AppManager: failed to create directory '{}': {}",
                       dir, ec.message());
-        SendAck(resp_topic, state.total_frags - 1, "INTERNAL_ERR");
+        SendAck(resp_topic, state.total_frags - 1, FileRespCode::kInternalErr);
         return;
     }
 
@@ -350,14 +350,14 @@ void AppManager::TryComplete(const std::string &key, FileType type,
     std::ofstream ofs(file_path, std::ios::binary);
     if (!ofs) {
         spdlog::error("AppManager: failed to open '{}' for writing", file_path);
-        SendAck(resp_topic, state.total_frags - 1, "INTERNAL_ERR");
+        SendAck(resp_topic, state.total_frags - 1, FileRespCode::kInternalErr);
         return;
     }
     ofs.write(reinterpret_cast<const char *>(file_data.data()),
               static_cast<std::streamsize>(file_data.size()));
     if (!ofs) {
         spdlog::error("AppManager: failed to write '{}'", file_path);
-        SendAck(resp_topic, state.total_frags - 1, "INTERNAL_ERR");
+        SendAck(resp_topic, state.total_frags - 1, FileRespCode::kInternalErr);
         return;
     }
     ofs.close();
@@ -366,7 +366,7 @@ void AppManager::TryComplete(const std::string &key, FileType type,
                  file_path, file_data.size());
     spdlog::debug("AppManager: file written path='{}' size={}",
                   file_path, file_data.size());
-    SendAck(resp_topic, state.total_frags - 1, "OK");
+    SendAck(resp_topic, state.total_frags - 1, FileRespCode::kOk);
 }
 
 // ============================================================================
@@ -430,11 +430,11 @@ std::string AppManager::MakeFileDir(FileType type) const
 }
 
 void AppManager::SendAck(const std::string &resp_topic, int frag_id,
-                         const std::string &status)
+                         FileRespCode status)
 {
     nlohmann::json resp;
     resp["frag_id"] = frag_id;
-    resp["resp"] = status;
+    resp["resp"] = static_cast<int>(status);
     mqtt_client_->PublishMessage(resp_topic, resp.dump(), 1);
 }
 
@@ -575,7 +575,7 @@ void AppManager::CleanupLoop()
         // Send timeout responses outside the lock (APP may no longer be
         // listening, but we attempt delivery anyway).
         for (const auto &entry : timed_out) {
-            SendAck(MakeRespTopic(entry.second), -1, "TIMEOUT");
+            SendAck(MakeRespTopic(entry.second), -1, FileRespCode::kTimeout);
         }
     }
 

@@ -42,6 +42,16 @@ public:
 private:
     enum class FileType { kFace, kVoice };
 
+    // Response codes for file-transfer acknowledgment (app/<type>/resp).
+    // Sent as JSON integer in the "resp" field.
+    enum class FileRespCode : int {
+        kOk           = 0,
+        kInvalidFrag  = 1,
+        kTimeout      = 2,
+        kChecksumErr  = 3,
+        kInternalErr  = 4,
+    };
+
     struct FileTransferState {
         std::string file_name;
         int total_frags = 0;
@@ -84,7 +94,7 @@ private:
     static std::string SanitizeFileName(const std::string &file_name);
     std::string MakeFileDir(FileType type) const;
     void SendAck(const std::string &resp_topic, int frag_id,
-                 const std::string &status);
+                 FileRespCode status);
     static int ParseJsonInt(const nlohmann::json &j, const std::string &key,
                             int default_val);
 
