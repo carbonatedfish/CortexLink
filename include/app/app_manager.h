@@ -21,7 +21,8 @@ namespace cortexlink {
 
 class AppManager {
 public:
-    explicit AppManager(MqttClient *client);
+    AppManager(MqttClient *client,
+              const std::string &openclaw_endpoint = "http://127.0.0.1:18789");
     ~AppManager();
 
     // Non-copyable, non-movable

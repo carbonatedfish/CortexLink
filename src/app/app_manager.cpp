@@ -18,7 +18,8 @@ namespace cortexlink {
 // Construction / Destruction
 // ============================================================================
 
-AppManager::AppManager(MqttClient *client)
+AppManager::AppManager(MqttClient *client,
+                       const std::string &openclaw_endpoint)
     : mqtt_client_(client)
 {
     using namespace std::placeholders;
@@ -42,6 +43,7 @@ AppManager::AppManager(MqttClient *client)
         });
 
     open_claw_client_ = std::make_unique<OpenClawClient>();
+    open_claw_client_->SetEndpoint(openclaw_endpoint);
 }
 
 AppManager::~AppManager()
