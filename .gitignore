@@ -3,3 +3,5 @@ plan.md
 .vscode/
 .cache/
 build/
+devices/cron/_pychche_/
+devices/speaker/_pychche_/

@@ -2,7 +2,9 @@
 
 ## 概述
 
-Cron 定时器是 CortexLink 主机内部维护的**虚拟设备**，遵循与其他物理设备完全相同的 MQTT 接口规范。用户可通过 Lua 脚本调用 `do_action` 来创建、删除、查看定时任务。当 cron 表达式匹配时，Cron 设备触发 `cron_trigger` 事件，经规则引擎执行对应的 Lua 脚本。
+Cron 定时器是 CortexLink 的**虚拟设备**，以独立 Python 进程（`devices/cron/`）运行，通过 MQTT 遵循与其他物理设备完全相同的接口规范。用户可通过 Lua 脚本调用 `do_action` 来创建、删除、查看定时任务。当 cron 表达式匹配时，Cron 设备通过 MQTT 发布 `cron_trigger` 事件，经规则引擎执行对应的 Lua 脚本。
+
+> **注意：** 原 C++ 内置实现（`CronScheduler`）已移除，替换为 `devices/cron/` 下的 Python 实现。功能行为完全兼容，Lua 脚本无需任何修改。
 
 ## 设备属性
 
@@ -206,6 +208,8 @@ end
 
 ## 内部架构
 
+Cron 设备现为独立 Python 进程（`devices/cron/`），通过 MQTT 与主机通信。不再内置于 C++ 主机进程中。
+
 ```
 Lua 脚本
   │ do_action("0000...0001", "add_cron", {...})
@@ -213,24 +217,40 @@ Lua 脚本
 MQTT: device/0000...0001/action/add_cron
   │
   ▼
-CronScheduler::OnAction()
+CronDevice._handle_action()  (Python, 独立进程)
   ├─ 解析 action params
-  ├─ 写入内存 entries_
+  ├─ 写入内存 entries
   ├─ 持久化到 ~/.cortexlink/cron/crontab.txt
-  ├─ cv_.notify_one() 唤醒 scheduler 线程
-  └─ 回复 M2S response
+  └─ 回复 S2M response
 
 Scheduler 线程（每 30 秒）
   ├─ 获取当前 UTC+8 时间
-  ├─ 遍历 entries_ 检查 cron 表达式匹配
-  ├─ 匹配成功 → rule_engine_->InjectEvent(cron_trigger)
+  ├─ 遍历 entries 检查 cron 表达式匹配
+  ├─ 匹配成功 → MQTT publish device/0000...0001/event/cron_trigger
   ├─ 递减 trigger_count（如 > 0）
   └─ trigger_count == 0 → 自动删除
 
-规则引擎
+规则引擎（C++ 主机）
+  ├─ device/+/event/# 订阅收到 cron_trigger
   ├─ 查找绑定到 cron_trigger 的规则
   ├─ 评估条件表达式
   └─ 执行 Lua 脚本
+```
+
+### 启动方式
+
+```bash
+cd devices/cron
+./start_cron.sh              # 默认配置
+./start_cron.sh --debug      # 调试模式
+```
+
+或手动启动：
+
+```bash
+source pyenv/bin/activate
+cd devices/cron
+python3 main.py
 ```
 
 ---
@@ -272,8 +292,9 @@ c3d4e5f6-a7b8-4901-cdef-012345678901|30 14 24 6 *|{"reminder":"一次性"}|1
 
 | 项目 | 说明 |
 |------|------|
-| 时区 | 固定 UTC+8（Asia/Shanghai），使用系统 `localtime` |
-| 调度粒度 | 每 30 秒检查一次 cron 匹配；新增任务时立即唤醒 |
-| 去重策略 | 同一分钟每个 job 最多触发一次（按 unix_minute 去重） |
-| 并发安全 | `std::mutex` 保护 entries_；DB 操作有 `DBTable` 基类 mutex |
-| 脚本超时 | 与普通 Lua 脚本一致：3s 超时，重试 1 次 |
+| 时区 | 固定 UTC+8（Asia/Shanghai），使用 Python `datetime.now(timezone.utc) + timedelta(hours=8)` |
+| 调度粒度 | 每 30 秒检查一次 cron 匹配（`threading.Event.wait(30)` 可响应式停止） |
+| 去重策略 | 同一分钟每个 job 最多触发一次（按 `int(time.time() / 60)` 去重） |
+| 并发安全 | `threading.Lock` 保护 entries；MQTT 回调线程与 scheduler 线程通过锁协调 |
+| 脚本超时 | 与普通 Lua 脚本一致：3s 超时，重试 1 次（由主机 RuleEngine 控制） |
+| 实现语言 | Python 3（独立进程），替代原 C++ CronScheduler |

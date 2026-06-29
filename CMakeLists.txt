@@ -69,12 +69,6 @@ set(CortexLink_LLM_SQL_SRC
     src/llm/open_claw_client.cpp
 )
 
-# --- Cron module source ---
-set(CortexLink_CRON_SRC
-    src/cron/cron_parser.cpp
-    src/cron/cron_scheduler.cpp
-)
-
 add_executable(CortexLink
     src/main.cpp
     ${CortexLink_MQTT_SRC}
@@ -85,7 +79,6 @@ add_executable(CortexLink
     ${CortexLink_LUA_SRC}
     ${CortexLink_APP_SRC}
     ${CortexLink_LLM_SQL_SRC}
-    ${CortexLink_CRON_SRC}
 )
 target_include_directories(CortexLink PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR} ${LUA_INCLUDE_DIRS})
 target_link_libraries(CortexLink PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3 ${LUA_LIBRARIES} ${CRYPTO_LIB})
@@ -100,7 +93,6 @@ add_executable(CortexLinkTest
     ${CortexLink_DEVICE_SRC}
     ${CortexLink_LUA_SRC}
     src/llm/open_claw_client.cpp
-    ${CortexLink_CRON_SRC}
 )
 target_include_directories(CortexLinkTest PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR} ${LUA_INCLUDE_DIRS})
 target_link_libraries(CortexLinkTest PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3 ${LUA_LIBRARIES} ${CRYPTO_LIB})

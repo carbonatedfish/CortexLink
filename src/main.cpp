@@ -1,30 +1,4 @@
-#include <atomic>
-#include <csignal>
-#include <cstdlib>
-#include <iostream>
-#include <string>
-#include <thread>
-
-#include <cxxopts/cxxopts.hpp>
-#include <spdlog/spdlog.h>
-
-#include "app/app_manager.h"
-#include "app/app_sql_proxy.h"
-#include "cron/cron_scheduler.h"
-#include "db/db_table.h"
-#include "llm/llm_sql_proxy.h"
-#include "llm/open_claw_client.h"
-#include "db/device_data_table.h"
-#include "db/device_property_table.h"
-#include "db/event_record_table.h"
-#include "db/event_rule_table.h"
-#include "db/event_table.h"
-#include "db/rule_table.h"
-#include "db/user_profile_table.h"
-#include "device/device_manager.h"
-#include "mqtt/mqtt_client.h"
-#include "rule_engine/rule_engine.h"
-#include "util/log_util.h"
+#include "main.h"
 
 using namespace cortexlink;
 
@@ -206,20 +180,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // 15. Create and start the CronScheduler.
-    CronScheduler cron_scheduler(&mqtt, &rule_engine);
-    if (!cron_scheduler.Start()) {
-        spdlog::error("Failed to start CronScheduler");
-        llm_sql_proxy.Stop();
-        sql_proxy.Stop();
-        app_mgr.Stop();
-        rule_engine.Stop();
-        dev_mgr.Stop();
-        mqtt.LoopStop();
-        mqtt.Disconnect();
-        DBTable::Shutdown();
-        return 1;
-    }
+
 
     spdlog::info("CortexLink startup complete — waiting for events");
 
@@ -230,8 +191,6 @@ int main(int argc, char **argv)
 
     // 17. Graceful shutdown (reverse order of startup).
     spdlog::info("=== CortexLink shutting down ===");
-
-    cron_scheduler.Stop();
 
     llm_sql_proxy.Stop();
     sql_proxy.Stop();
