@@ -2,6 +2,7 @@ CLAUDE.md
 plan.md
 .vscode/
 .cache/
+.clangd
 build/
 devices/cron/__pycache__/
 devices/speaker/__pycache__/

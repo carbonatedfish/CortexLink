@@ -55,4 +55,17 @@ protected:
     static std::mutex write_mutex_;
 };
 
+// Reusable thin subclass that exposes ExecuteRead/ExecuteWrite publicly.
+// Both AppSqlProxy and LlmSqlProxy use this to execute strategy-generated
+// SQL through the same mutex-serialized connection.
+class PublicDBTable : public DBTable {
+public:
+    // No real table schema — tables are created in main.cpp.
+    bool CreateTable() override { return true; }
+
+    // Expose protected ExecuteRead/ExecuteWrite as public.
+    using DBTable::ExecuteRead;
+    using DBTable::ExecuteWrite;
+};
+
 }  // namespace cortexlink

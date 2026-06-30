@@ -10,20 +10,10 @@
 #include "app/sql_strategy.h"
 #include "db/db_table.h"
 #include "mqtt/mqtt_client.h"
+#include "util/sql_util.h"
+#include "util/time_util.h"
 
 namespace cortexlink {
-
-// Thin subclass of DBTable that exposes ExecuteRead publicly.
-// AppSqlProxy uses this to execute strategy-generated SQL queries
-// through the same mutex-serialized connection all other DB code shares.
-class AppSqlTable : public DBTable {
-public:
-    // No real table schema — the 7 tables are already created in main.cpp.
-    bool CreateTable() override { return true; }
-
-    // Expose the protected ExecuteRead overloads as public.
-    using DBTable::ExecuteRead;
-};
 
 // Maps cmd strings to SqlStrategy instances.
 class CmdRouter {
@@ -42,6 +32,10 @@ private:
 
 // AppSqlProxy receives cmd-driven SQL query requests from the APP,
 // dispatches them through the strategy pattern, and responds with results.
+//
+// Architecture (matching LlmSqlProxy):
+//   OnSqlRequest (transport) → ProcessRequest (pure logic) → SendResponse
+//   ProcessRequest returns a JSON envelope built by BuildResponse.
 class AppSqlProxy {
 public:
     explicit AppSqlProxy(MqttClient *client);
@@ -61,17 +55,25 @@ private:
     static constexpr int kRespInvalidParams = 4;
     static constexpr int kRespSqlError      = 5;
 
+    // Transport layer: MQTT callback.
     void OnSqlRequest(const std::string &topic, const std::string &payload);
-    void HandleQuery(const nlohmann::json &request);
-    void SendResponse(const std::string &msg_id, int resp_code,
-                      const nlohmann::json &rows);
 
-    static std::string CurrentTimestamp();
-    static nlohmann::json RowToJson(sqlite3_stmt *stmt);
+    // Core dispatch: validate cmd, look up strategy, execute SQL.
+    // Returns the full JSON response envelope (without msg_id).
+    nlohmann::json ProcessRequest(const nlohmann::json &request);
+
+    // Build the standard JSON response envelope with message field.
+    nlohmann::json BuildResponse(int resp_code,
+                                  const nlohmann::json &rows,
+                                  const nlohmann::json &extra = nullptr);
+
+    // Transport layer: inject msg_id and publish via MQTT.
+    void SendResponse(const std::string &msg_id,
+                      const nlohmann::json &response);
 
     MqttClient *mqtt_client_;
     std::unique_ptr<MqttSubscription> sql_trans_sub_;
-    AppSqlTable db_;
+    PublicDBTable db_;
     CmdRouter router_;
 };
 

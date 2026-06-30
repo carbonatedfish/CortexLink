@@ -12,21 +12,10 @@
 
 #include "db/db_table.h"
 #include "llm/llm_sql_strategy.h"
+#include "util/sql_util.h"
+#include "util/time_util.h"
 
 namespace cortexlink {
-
-// Thin subclass of DBTable that exposes ExecuteRead and ExecuteWrite publicly.
-// LlmSqlProxy uses this to execute strategy-generated SQL queries
-// through the same mutex-serialized connection all other DB code shares.
-class LlmSqlTable : public DBTable {
-public:
-    // No real table schema — tables are already created in main.cpp.
-    bool CreateTable() override { return true; }
-
-    // Expose the protected ExecuteRead and ExecuteWrite overloads as public.
-    using DBTable::ExecuteRead;
-    using DBTable::ExecuteWrite;
-};
 
 // LlmSqlProxy listens on an HTTP port for LLM (OpenClaw) SQL requests.
 // It uses the strategy pattern (LlmSqlStrategy + LlmCmdRouter) to dispatch
@@ -80,15 +69,11 @@ private:
     static void SendJsonResponse(httplib::Response &res,
                                  const nlohmann::json &body);
 
-    // Helpers
-    static std::string CurrentTimestamp();
-    static nlohmann::json RowToJson(sqlite3_stmt *stmt);
-
     int port_ = 8899;
     std::atomic<bool> running_{false};
     std::thread server_thread_;
     std::unique_ptr<httplib::Server> server_;
-    LlmSqlTable db_;
+    PublicDBTable db_;
     LlmCmdRouter router_;
 };
 

@@ -37,6 +37,8 @@ set(CortexLink_DB_SRC
 set(CortexLink_UTIL_SRC
     src/util/uuid_util.cpp
     src/util/log_util.cpp
+    src/util/time_util.cpp
+    src/util/sql_util.cpp
 )
 
 set(CortexLink_RULE_ENGINE_SRC

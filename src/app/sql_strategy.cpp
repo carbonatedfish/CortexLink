@@ -79,6 +79,39 @@ bool SqlStrategy::BindIntParam(sqlite3_stmt *stmt, int idx,
     return true;
 }
 
+bool SqlStrategy::BindTextParam(sqlite3_stmt *stmt, int idx,
+                                const nlohmann::json &params,
+                                const std::string &key)
+{
+    if (!params.contains(key) || !params[key].is_string()) {
+        spdlog::warn("SqlStrategy: param '{}' missing or not a string", key);
+        return false;
+    }
+
+    std::string text = params[key].get<std::string>();
+    int rc = sqlite3_bind_text(stmt, idx, text.c_str(),
+                               static_cast<int>(text.size()),
+                               SQLITE_TRANSIENT);
+    if (rc != SQLITE_OK) {
+        spdlog::error("SqlStrategy: bind_text failed at idx {}: {}", idx,
+                      sqlite3_errmsg(sqlite3_db_handle(stmt)));
+        return false;
+    }
+    spdlog::debug("SqlStrategy: bound text param '{}' at idx {} value='{}'",
+                  key, idx, text);
+    return true;
+}
+
+bool SqlStrategy::IsWrite() const
+{
+    return false;
+}
+
+nlohmann::json SqlStrategy::PostExecute(sqlite3 * /*db*/) const
+{
+    return nlohmann::json::object();
+}
+
 // ============================================================================
 // GetDeviceListStrategy
 // ============================================================================
@@ -182,6 +215,135 @@ std::string GetUserProfilesStrategy::GetSql(const nlohmann::json & /*params*/) c
 
 bool GetUserProfilesStrategy::BindParams(sqlite3_stmt * /*stmt*/,
                                          const nlohmann::json & /*params*/) const
+{
+    return true;
+}
+
+// ============================================================================
+// InsertUserProfileStrategy
+// ============================================================================
+
+std::string InsertUserProfileStrategy::GetSql(const nlohmann::json & /*params*/) const
+{
+    return "INSERT INTO user_profile (user_id, user_name, preference) "
+           "VALUES (?, ?, ?)";
+}
+
+bool InsertUserProfileStrategy::ValidateParams(const nlohmann::json &params) const
+{
+    return params.contains("user_id") && params["user_id"].is_string() &&
+           !params["user_id"].get<std::string>().empty() &&
+           params.contains("user_name") && params["user_name"].is_string() &&
+           !params["user_name"].get<std::string>().empty();
+}
+
+bool InsertUserProfileStrategy::BindParams(sqlite3_stmt *stmt,
+                                           const nlohmann::json &params) const
+{
+    if (!BindUuidParam(stmt, 1, params, "user_id")) return false;
+    if (!BindTextParam(stmt, 2, params, "user_name")) return false;
+
+    // preference is optional — bind empty string when absent
+    if (params.contains("preference") && params["preference"].is_string()) {
+        std::string pref = params["preference"].get<std::string>();
+        int rc = sqlite3_bind_text(stmt, 3, pref.c_str(),
+                                   static_cast<int>(pref.size()),
+                                   SQLITE_TRANSIENT);
+        if (rc != SQLITE_OK) {
+            spdlog::error("SqlStrategy: bind_text failed at idx 3: {}",
+                          sqlite3_errmsg(sqlite3_db_handle(stmt)));
+            return false;
+        }
+    } else {
+        int rc = sqlite3_bind_text(stmt, 3, "", 0, SQLITE_STATIC);
+        if (rc != SQLITE_OK) {
+            spdlog::error("SqlStrategy: bind_text failed at idx 3: {}",
+                          sqlite3_errmsg(sqlite3_db_handle(stmt)));
+            return false;
+        }
+    }
+    return true;
+}
+
+bool InsertUserProfileStrategy::IsWrite() const
+{
+    return true;
+}
+
+// ============================================================================
+// UpdateUserProfileStrategy
+// ============================================================================
+
+std::string UpdateUserProfileStrategy::GetSql(const nlohmann::json & /*params*/) const
+{
+    return "UPDATE user_profile SET user_name = ?, preference = ? "
+           "WHERE user_id = ?";
+}
+
+bool UpdateUserProfileStrategy::ValidateParams(const nlohmann::json &params) const
+{
+    return params.contains("user_id") && params["user_id"].is_string() &&
+           !params["user_id"].get<std::string>().empty() &&
+           params.contains("user_name") && params["user_name"].is_string() &&
+           !params["user_name"].get<std::string>().empty();
+}
+
+bool UpdateUserProfileStrategy::BindParams(sqlite3_stmt *stmt,
+                                           const nlohmann::json &params) const
+{
+    if (!BindTextParam(stmt, 1, params, "user_name")) return false;
+
+    // preference is optional — bind empty string when absent
+    if (params.contains("preference") && params["preference"].is_string()) {
+        std::string pref = params["preference"].get<std::string>();
+        int rc = sqlite3_bind_text(stmt, 2, pref.c_str(),
+                                   static_cast<int>(pref.size()),
+                                   SQLITE_TRANSIENT);
+        if (rc != SQLITE_OK) {
+            spdlog::error("SqlStrategy: bind_text failed at idx 2: {}",
+                          sqlite3_errmsg(sqlite3_db_handle(stmt)));
+            return false;
+        }
+    } else {
+        int rc = sqlite3_bind_text(stmt, 2, "", 0, SQLITE_STATIC);
+        if (rc != SQLITE_OK) {
+            spdlog::error("SqlStrategy: bind_text failed at idx 2: {}",
+                          sqlite3_errmsg(sqlite3_db_handle(stmt)));
+            return false;
+        }
+    }
+
+    if (!BindUuidParam(stmt, 3, params, "user_id")) return false;
+    return true;
+}
+
+bool UpdateUserProfileStrategy::IsWrite() const
+{
+    return true;
+}
+
+// ============================================================================
+// DeleteUserProfileStrategy
+// ============================================================================
+
+std::string DeleteUserProfileStrategy::GetSql(const nlohmann::json & /*params*/) const
+{
+    return "DELETE FROM user_profile WHERE user_id = ?";
+}
+
+bool DeleteUserProfileStrategy::ValidateParams(const nlohmann::json &params) const
+{
+    return params.contains("user_id") && params["user_id"].is_string() &&
+           !params["user_id"].get<std::string>().empty();
+}
+
+bool DeleteUserProfileStrategy::BindParams(sqlite3_stmt *stmt,
+                                           const nlohmann::json &params) const
+{
+    return BindUuidParam(stmt, 1, params, "user_id");
+}
+
+bool DeleteUserProfileStrategy::IsWrite() const
 {
     return true;
 }
