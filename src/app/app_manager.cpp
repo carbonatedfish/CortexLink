@@ -230,65 +230,81 @@ void AppManager::HandleFragment(const std::string &payload, FileType type)
             state.checksum = checksum;
             state.last_frag_time = now;
             state.fragments[0] = data;
-            transfers_[key] = std::move(state);
 
-            spdlog::info("AppManager: transfer started for '{}' ({} frags, key={})",
-                         safe_name, total_frags, key);
-            spdlog::debug("AppManager: new transfer state created key={} total_frags={} checksum={}",
-                          key, total_frags, checksum);
+            // Single-fragment transfer — complete immediately without going
+            // through the transfers_ map.  The existing should_complete
+            // pathway below the lock will call TryComplete for us.
+            if (total_frags == 1) {
+                spdlog::info("AppManager: single-fragment transfer '{}' (key={})",
+                             safe_name, key);
+                completed_state = std::move(state);
+                should_complete = true;
+                // fall through to lock-scope exit; skip multi-fragment code
+                // via the frag_id != 0 guard below.
+            } else {
+                transfers_[key] = std::move(state);
+                spdlog::info("AppManager: transfer started for '{}' ({} frags, key={})",
+                             safe_name, total_frags, key);
+                spdlog::debug("AppManager: new transfer state created key={} total_frags={} checksum={}",
+                              key, total_frags, checksum);
+                SendAck(resp_topic, frag_id, FileRespCode::kOk);
+                return;
+            }
+        }
+
+        // 6. Not the first fragment — must have existing state.
+        //     Skip this block for single-fragment transfers (frag_id == 0 &&
+        //     total_frags == 1), which already set completed_state above.
+        if (frag_id != 0) {
+            auto it = transfers_.find(key);
+            if (it == transfers_.end()) {
+                spdlog::warn("AppManager: fragment {} for unknown transfer '{}'",
+                             frag_id, key);
+                SendAck(resp_topic, frag_id, FileRespCode::kInvalidFrag);
+                return;
+            }
+
+            auto &state = it->second;
+
+            // 7. Check fragment timeout (2 seconds)
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - state.last_frag_time);
+            if (elapsed.count() > 2000) {
+                spdlog::warn("AppManager: transfer '{}' timed out ({}ms since last fragment)",
+                             key, elapsed.count());
+                transfers_.erase(it);
+                SendAck(resp_topic, frag_id, FileRespCode::kTimeout);
+                return;
+            }
+
+            // 8. Update total_frags if the new fragment declares a different count
+            if (total_frags != state.total_frags) {
+                spdlog::info("AppManager: transfer '{}' total_frags changed {} → {}",
+                             key, state.total_frags, total_frags);
+                state.total_frags = total_frags;
+            }
+
+            // Keep checksum from first fragment if provided there; if the first
+            // fragment omitted it, pick it up from a later fragment.
+            if (state.checksum.empty() && !checksum.empty()) {
+                state.checksum = checksum;
+            }
+
+            // 9. Store fragment
+            state.fragments[frag_id] = data;
+            state.last_frag_time = now;
+
+            spdlog::debug("AppManager: received fragment {}/{} for '{}' (data_len={})",
+                          frag_id + 1, state.total_frags, key, data.size());
             SendAck(resp_topic, frag_id, FileRespCode::kOk);
-            return;
-        }
 
-        // 6. Not the first fragment — must have existing state
-        auto it = transfers_.find(key);
-        if (it == transfers_.end()) {
-            spdlog::warn("AppManager: fragment {} for unknown transfer '{}'",
-                         frag_id, key);
-            SendAck(resp_topic, frag_id, FileRespCode::kInvalidFrag);
-            return;
-        }
-
-        auto &state = it->second;
-
-        // 7. Check fragment timeout (2 seconds)
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now - state.last_frag_time);
-        if (elapsed.count() > 2000) {
-            spdlog::warn("AppManager: transfer '{}' timed out ({}ms since last fragment)",
-                         key, elapsed.count());
-            transfers_.erase(it);
-            SendAck(resp_topic, frag_id, FileRespCode::kTimeout);
-            return;
-        }
-
-        // 8. Update total_frags if the new fragment declares a different count
-        if (total_frags != state.total_frags) {
-            spdlog::info("AppManager: transfer '{}' total_frags changed {} → {}",
-                         key, state.total_frags, total_frags);
-            state.total_frags = total_frags;
-        }
-
-        // Keep checksum from first fragment if provided there; if the first
-        // fragment omitted it, pick it up from a later fragment.
-        if (state.checksum.empty() && !checksum.empty()) {
-            state.checksum = checksum;
-        }
-
-        // 9. Store fragment
-        state.fragments[frag_id] = data;
-        state.last_frag_time = now;
-
-        spdlog::debug("AppManager: received fragment {}/{} for '{}' (data_len={})",
-                      frag_id + 1, state.total_frags, key, data.size());
-        SendAck(resp_topic, frag_id, FileRespCode::kOk);
-
-        // 10. Check if all fragments received — extract state and erase from
-        //     the map so we can do I/O + SHA outside the lock.
-        if (static_cast<int>(state.fragments.size()) == state.total_frags) {
-            completed_state = std::move(state);
-            transfers_.erase(it);
-            should_complete = true;
+            // 10. Check if all fragments received — extract state and erase from
+            //     the map so we can do I/O + SHA outside the lock.
+            if (static_cast<int>(state.fragments.size()) == state.total_frags) {
+                completed_state = std::move(state);
+                transfers_.erase(it);
+                should_complete = true;
+            }
         }
     }
 

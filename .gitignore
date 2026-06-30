@@ -3,5 +3,6 @@ plan.md
 .vscode/
 .cache/
 build/
-devices/cron/_pychche_/
-devices/speaker/_pychche_/
+devices/cron/__pycache__/
+devices/speaker/__pycache__/
+docs/joint_debugging_checklist.md
