@@ -4,6 +4,7 @@ plan.md
 .cache/
 .clangd
 build/
+build_rk3588/
 devices/cron/__pycache__/
 devices/speaker/__pycache__/
 docs/joint_debugging_checklist.md

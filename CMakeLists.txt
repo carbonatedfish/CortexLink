@@ -98,3 +98,13 @@ add_executable(CortexLinkTest
 )
 target_include_directories(CortexLinkTest PRIVATE include include/3rdparty ${MOSQUITTOPP_INCLUDE_DIR} ${LUA_INCLUDE_DIRS})
 target_link_libraries(CortexLinkTest PRIVATE ${MOSQUITTOPP_LIB} Threads::Threads SQLite::SQLite3 ${LUA_LIBRARIES} ${CRYPTO_LIB})
+
+# --- LLM test executable ---
+add_executable(CortexLinkLlmTest
+    test/llm_test.cpp
+    ${CortexLink_UTIL_SRC}
+    ${CortexLink_DB_SRC}
+    ${CortexLink_LLM_SQL_SRC}
+)
+target_include_directories(CortexLinkLlmTest PRIVATE include include/3rdparty)
+target_link_libraries(CortexLinkLlmTest PRIVATE Threads::Threads SQLite::SQLite3)

@@ -284,6 +284,8 @@ void DeviceManager::OnBroadcastOnline(const std::string & /*topic*/,
         return;
     }
 
+    spdlog::debug("DeviceManager: broadcast/online received message: {}", j.dump());
+
     auto dev_id_blob = util::UuidToBlob(dev_id_str);
 
     spdlog::debug("DeviceManager: broadcast/online received dev_id={} dev_name={} dev_type={}",
@@ -309,9 +311,9 @@ void DeviceManager::OnBroadcastOnline(const std::string & /*topic*/,
     }
 
     // Convert event array to DB-expected format: {"evt_id": [...]}
-    if (j.contains("event") && j["event"].is_array()) {
+    if (j.contains("events") && j["events"].is_array()) {
         nlohmann::json evt_ids = nlohmann::json::array();
-        for (const auto &e : j["event"]) {
+        for (const auto &e : j["events"]) {
             if (e.contains("evt_id")) {
                 evt_ids.push_back(e["evt_id"]);
             }
@@ -342,8 +344,8 @@ void DeviceManager::OnBroadcastOnline(const std::string & /*topic*/,
     }
 
     // Upsert event definitions into the event table
-    if (j.contains("event") && j["event"].is_array()) {
-        for (const auto &e : j["event"]) {
+    if (j.contains("events") && j["events"].is_array()) {
+        for (const auto &e : j["events"]) {
             if (!e.contains("evt_id") || !e["evt_id"].is_string()) continue;
             if (!e.contains("evt_name") || !e["evt_name"].is_string()) continue;
 
