@@ -108,3 +108,13 @@ add_executable(CortexLinkLlmTest
 )
 target_include_directories(CortexLinkLlmTest PRIVATE include include/3rdparty)
 target_link_libraries(CortexLinkLlmTest PRIVATE Threads::Threads SQLite::SQLite3)
+
+# --- OpenClaw connectivity test ---
+add_executable(CortexLinkOpenClawConnectivityTest
+    test/openclaw_connectivity_test.cpp
+    ${CortexLink_UTIL_SRC}
+    ${CortexLink_DB_SRC}
+    ${CortexLink_LLM_SQL_SRC}
+)
+target_include_directories(CortexLinkOpenClawConnectivityTest PRIVATE include include/3rdparty)
+target_link_libraries(CortexLinkOpenClawConnectivityTest PRIVATE Threads::Threads SQLite::SQLite3)
